@@ -11,7 +11,6 @@ mod xml;
 mod xsm;
 
 fn main() {
-    /*
     let args: Vec<String> = std::env::args().collect();
     let args_count = std::env::args().count();
     if args_count == 1 {
@@ -38,8 +37,7 @@ fn main() {
         {}
     }
 
-     */
-
+    /*
     let mut lokasi = File::open(
         "C:\\Program Files (x86)\\Steam\\steamapps\\common\\TreeOfSavior\\data\\bg_hi.ipf",
     )
@@ -47,4 +45,5 @@ fn main() {
     let berkas_ipf = ipf_parse(&mut lokasi);
 
     ipf_get_data(&mut lokasi, &berkas_ipf, 0);
+    */
 }

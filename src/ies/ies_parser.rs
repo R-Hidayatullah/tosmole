@@ -4,7 +4,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::ies::ies_enum::ColumnType;
+use crate::ies::ies_enum::IesColumnType;
 use crate::ies::ies_struct::{IesColumn, IesFile, IesRow};
 use crate::ies::ies_util::decrypt_string;
 
@@ -56,9 +56,9 @@ fn read_columns<'a, R: Read + Seek>(file: &'a mut R, ies: &'a mut IesFile) -> &'
         column.name_second = decrypt_string(&name_second);
         let num = file.read_u16::<LittleEndian>().unwrap();
         column.column_type = match num {
-            0 => ColumnType::Float,
-            1 => ColumnType::String,
-            2 => ColumnType::StringSecond,
+            0 => IesColumnType::Float,
+            1 => IesColumnType::String,
+            2 => IesColumnType::StringSecond,
             _ => panic!("Invalid column type"),
         };
         file.read_u32::<LittleEndian>().unwrap();
@@ -82,7 +82,7 @@ fn read_rows<'a, R: Read + Seek>(file: &'a mut R, ies: &'a mut IesFile) -> &'a m
 
         let mut row = Vec::with_capacity(ies.header.row_count as usize);
         for (_, column) in ies.columns.iter().enumerate() {
-            let value = if column.column_type == ColumnType::Float {
+            let value = if column.column_type == IesColumnType::Float {
                 let nan = file.read_f32::<LittleEndian>().unwrap();
                 let max_value = f32::from_bits(u32::MAX);
                 if (nan - max_value).abs() < f32::EPSILON {

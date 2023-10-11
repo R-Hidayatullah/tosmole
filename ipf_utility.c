@@ -7,6 +7,7 @@ uint32_t compute_crc32(uint32_t crc, char b);
 void keys_generate(uint32_t *keys);
 void keys_update(uint32_t *keys, char b);
 extern void ipf_decrypt(uint8_t *buffer, size_t size);
+extern void ipf_encrypt(uint8_t *buffer, size_t size);
 
 uint32_t CRC32_m_tab[] = {
     0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F,
@@ -81,7 +82,7 @@ void keys_update(uint32_t *keys, char b)
 
 void ipf_decrypt(uint8_t *buffer, size_t size)
 {
-  uint32_t keys[3];
+  uint32_t keys[3] = {0, 0, 0};
   keys_generate(keys);
   size = ((size - 1) >> 1) + 1;
   for (size_t i = 0; i < size; i++, buffer += 2)
@@ -89,5 +90,19 @@ void ipf_decrypt(uint8_t *buffer, size_t size)
     uint32_t v = (keys[2] & 0xFFFD) | 2;
     *buffer ^= (v * (v ^ 1)) >> 8;
     keys_update(keys, *buffer);
+  }
+}
+
+
+void ipf_encrypt(uint8_t *buffer, size_t size)
+{
+  uint32_t keys[3];
+  keys_generate(keys);
+  size = ((size - 1) >> 1) + 1;
+  for (size_t i = 0; i < size; i++, buffer += 2)
+  {
+    uint32_t v = (keys[2] & 0xFFFD) | 2;
+    keys_update(keys, *buffer);
+    *buffer ^= (v * (v ^ 1)) >> 8;
   }
 }

@@ -1,4 +1,8 @@
 #![allow(dead_code)]
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum XacChunkType {
     XacMeshId = 1,
     XacSkinningId = 2,
@@ -10,6 +14,7 @@ pub(crate) enum XacChunkType {
     XacMaterialTotalId = 13,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum XacVerticesAttributeType {
     XacPositionId = 0,
     XacNormalId = 1,

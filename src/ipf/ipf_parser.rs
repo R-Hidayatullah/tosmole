@@ -8,9 +8,10 @@ use crate::ipf::ipf_util::ipf_read_string;
 use crate::xac::xac_parser::xac_parse;
 use crate::xsm::xsm_parser::xsm_parse;
 
-#[link(name = "ipf_decrypt")]
+#[link(name = "ipf_utility")]
 extern "C" {
     pub fn ipf_decrypt(buffer: *mut u8, size: usize);
+    pub fn ipf_encrypt(buffer: *mut u8, size: usize);
 }
 
 const HEADER_LOCATION: i64 = -24;
@@ -97,7 +98,7 @@ pub(crate) fn ipf_get_data(ipf_file: &mut std::fs::File, ipf_data: &IPF, index_n
 
     let _text_filename = [
         "xml", "effect", "skn", "3deffect", "3dworld", "3drender", "3dprop", "3dzone", "fx", "fxh",
-        "h", "lst", "export", "skn", "fdp", "txt", "sani", "xsd", "sprbin", "fdp",
+        "h", "lst", "export", "skn", "fdp", "txt", "sani", "xsd", "sprbin", "fdp", "lua", "h",
     ];
 
     let _image_filename = ["png", "jpg", "dds", "gif", "jpeg", "bmp", "tga"];
@@ -123,7 +124,7 @@ pub(crate) fn ipf_get_data(ipf_file: &mut std::fs::File, ipf_data: &IPF, index_n
         let mut _data = Cursor::new(data);
         let ies_file = ies_parse(&mut _data);
         println!();
-        println!("{:?}", ies_file.header);
+        println!("{:?}", ies_file);
     } else if extension.eq("fsb") {
         let _data = Cursor::new(data);
         println!();

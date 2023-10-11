@@ -1,5 +1,5 @@
 fn main() {
     cc::Build::new()
-        .file("ipf_decrypt.c")
-        .compile("ipf_decrypt");
+        .file("ipf_utility.c")
+        .compile("ipf_utility");
 }

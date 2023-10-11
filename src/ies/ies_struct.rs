@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ies::ies_enum::ColumnType;
+use crate::ies::ies_enum::IesColumnType;
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct IesFile {
@@ -24,11 +24,11 @@ pub(crate) struct IesHeader {
     pub(crate) string_column_count: u16,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Eq)]
 pub(crate) struct IesColumn {
     pub(crate) name: String,
     pub(crate) name_second: String,
-    pub(crate) column_type: ColumnType,
+    pub(crate) column_type: IesColumnType,
     pub(crate) position: u16,
 }
 
@@ -37,7 +37,7 @@ impl Default for IesColumn {
         IesColumn {
             name: "".to_string(),
             name_second: "".to_string(),
-            column_type: ColumnType::Float,
+            column_type: IesColumnType::Float,
             position: 0,
         }
     }
@@ -46,15 +46,15 @@ impl Default for IesColumn {
 impl Ord for IesColumn {
     fn cmp(&self, other: &Self) -> Ordering {
         match (&self.column_type, &other.column_type) {
-            (ColumnType::Float, ColumnType::Float)
-            | (ColumnType::String, ColumnType::String)
-            | (ColumnType::StringSecond, ColumnType::StringSecond) => {
+            (IesColumnType::Float, IesColumnType::Float)
+            | (IesColumnType::String, IesColumnType::String)
+            | (IesColumnType::StringSecond, IesColumnType::StringSecond) => {
                 self.position.cmp(&other.position)
             }
-            (ColumnType::Float, _) => Ordering::Less,
-            (_, ColumnType::Float) => Ordering::Greater,
-            (ColumnType::String, ColumnType::StringSecond) => Ordering::Less,
-            (ColumnType::StringSecond, ColumnType::String) => Ordering::Greater,
+            (IesColumnType::Float, _) => Ordering::Less,
+            (_, IesColumnType::Float) => Ordering::Greater,
+            (IesColumnType::String, IesColumnType::StringSecond) => Ordering::Less,
+            (IesColumnType::StringSecond, IesColumnType::String) => Ordering::Greater,
         }
     }
 }
@@ -70,8 +70,6 @@ impl PartialEq for IesColumn {
         self.column_type == other.column_type && self.position == other.position
     }
 }
-
-impl Eq for IesColumn {}
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct IesRow {

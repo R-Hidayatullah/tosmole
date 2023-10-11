@@ -84,4 +84,4 @@ Contributions to tosmole are welcome! To contribute, please follow these guideli
 
 ### License
 
-This project is licensed under the MIT License.
+This project is licensed under the GPL-3.0 license.

@@ -28,7 +28,7 @@ pub(crate) struct IPFFileTable {
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
-pub(crate) struct IPF {
+pub(crate) struct IpfFile {
     pub(crate) footer: IPFFooter,
     pub(crate) file_table: Vec<IPFFileTable>,
 }

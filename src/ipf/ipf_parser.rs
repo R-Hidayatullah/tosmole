@@ -3,7 +3,7 @@ use std::io::{Cursor, Read, Seek};
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use crate::ies::ies_parser::ies_parse;
-use crate::ipf::ipf_struct::{IPFFileTable, IPF};
+use crate::ipf::ipf_struct::{IPFFileTable, IpfFile};
 use crate::ipf::ipf_util::ipf_read_string;
 use crate::xac::xac_parser::xac_parse;
 use crate::xsm::xsm_parser::xsm_parse;
@@ -17,8 +17,8 @@ extern "C" {
 const HEADER_LOCATION: i64 = -24;
 const MAGIC_NUMBER: usize = 4;
 
-pub(crate) fn ipf_parse(ipf_file: &mut std::fs::File) -> IPF {
-    let mut ipf_data = IPF::default();
+pub(crate) fn ipf_parse(ipf_file: &mut std::fs::File) -> IpfFile {
+    let mut ipf_data = IpfFile::default();
     ipf_file
         .seek(std::io::SeekFrom::End(HEADER_LOCATION))
         .unwrap();
@@ -41,7 +41,9 @@ pub(crate) fn ipf_parse(ipf_file: &mut std::fs::File) -> IPF {
             ipf_data.footer.file_table_pointer as u64,
         ))
         .unwrap();
-
+    let mut pb = pbr::ProgressBar::new(ipf_data.footer.file_count as u64);
+    pb.format("╢▌▌░╟");
+    println!("Start parsing IPF data.");
     for i in 0..ipf_data.footer.file_count {
         let mut ipf_file_table = IPFFileTable::default();
         ipf_file_table.idx = i as i32;
@@ -60,15 +62,17 @@ pub(crate) fn ipf_parse(ipf_file: &mut std::fs::File) -> IPF {
             .to_str()
             .unwrap()
             .to_string();
-        let current_position = ipf_file.seek(std::io::SeekFrom::Current(0)).unwrap();
+        let current_position = ipf_file.stream_position().unwrap();
         ipf_data.file_table.push(ipf_file_table);
         ipf_file
             .seek(std::io::SeekFrom::Start(current_position))
             .unwrap();
+        pb.inc();
     }
+    println!("\nFinish!");
     ipf_data
 }
-pub(crate) fn ipf_get_data(ipf_file: &mut std::fs::File, ipf_data: &IPF, index_num: usize) {
+pub(crate) fn ipf_get_data(ipf_file: &mut std::fs::File, ipf_data: &IpfFile, index_num: usize) {
     let _default_decompressed = [
         "jpg", "fsb", "mp3", "fdp", "fev", "xml", "ies", "png", "tga", "lua",
     ];
@@ -156,20 +160,19 @@ fn ipf_decompress(data: &mut Vec<u8>, version: u32, uncompressed_size: u32) -> V
     }
 
     if uncompressed_size as usize <= data.len() {
-        let result = data.to_owned();
-        result
+        data.to_owned()
     } else {
         ipf_decompress_data(data, uncompressed_size)
     }
 }
 
-fn ipf_decompress_data(data: &mut Vec<u8>, uncompressed_size: u32) -> Vec<u8> {
+fn ipf_decompress_data(data: &Vec<u8>, uncompressed_size: u32) -> Vec<u8> {
     let input_data = data.as_slice();
 
     let mut output_data = Vec::with_capacity(uncompressed_size as usize);
     flate2::Decompress::new(false)
         .decompress_vec(
-            &input_data,
+            input_data,
             &mut output_data,
             flate2::FlushDecompress::Finish,
         )

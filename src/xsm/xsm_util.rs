@@ -17,20 +17,18 @@ pub(crate) fn xsm_read_string<R: Read + Seek>(file: &mut R) -> String {
 }
 
 pub(crate) fn xsm_read_quaternion16<R: Read + Seek>(file: &mut R) -> XsmQuaternion16 {
-    let quat = XsmQuaternion16 {
+    XsmQuaternion16 {
         x: file.read_i16::<LittleEndian>().unwrap(),
         y: file.read_i16::<LittleEndian>().unwrap(),
         z: file.read_i16::<LittleEndian>().unwrap(),
         w: file.read_i16::<LittleEndian>().unwrap(),
-    };
-    quat
+    }
 }
 
 pub(crate) fn xsm_read_vec3d<R: Read + Seek>(file: &mut R) -> XsmVec3d {
-    let vec3d = XsmVec3d {
+    XsmVec3d {
         x: file.read_f32::<LittleEndian>().unwrap(),
         y: file.read_f32::<LittleEndian>().unwrap(),
         z: file.read_f32::<LittleEndian>().unwrap(),
-    };
-    vec3d
+    }
 }

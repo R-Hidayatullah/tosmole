@@ -42,10 +42,9 @@ fn main() {
      */
 
     let mut lokasi = File::open(
-        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\TreeOfSavior\\data\\bg_hi.ipf",
+        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\TreeOfSavior\\data\\animation.ipf",
     )
     .unwrap();
     let berkas_ipf = ipf_parse(&mut lokasi);
-
     ipf_get_data(&mut lokasi, &berkas_ipf, 0);
 }

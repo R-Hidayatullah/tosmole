@@ -1,8 +1,8 @@
 #![feature(seek_stream_len)]
 
-use std::fs::File;
-
 use crate::ipf::ipf_parser::{ipf_get_data, ipf_parse};
+use std::fs::File;
+use std::io::BufReader;
 
 mod fsb;
 mod ies;
@@ -19,7 +19,7 @@ fn main() {
     } else if args_count == 2 {
         println!("Parse first index.");
         let path_file = &args[1];
-        let mut location = File::open(path_file).unwrap();
+        let mut location = BufReader::new(File::open(path_file).unwrap());
         let ipf_data = ipf_parse(&mut location);
         ipf_get_data(&mut location, &ipf_data, 0);
         println!("\nFinish parsing first index.");
@@ -27,7 +27,7 @@ fn main() {
         let path_file = &args[1];
         let index_list = &args[2];
         println!("Parse index : {}", index_list);
-        let mut location = File::open(path_file).unwrap();
+        let mut location = BufReader::new(File::open(path_file).unwrap());
         let ipf_data = ipf_parse(&mut location);
         ipf_get_data(
             &mut location,
@@ -37,14 +37,4 @@ fn main() {
         println!("\nFinish parsing index : {}", index_list);
         {}
     }
-
-    /*
-    let mut lokasi = File::open(
-        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\TreeOfSavior\\data\\animation.ipf",
-    )
-    .unwrap();
-    let berkas_ipf = ipf_parse(&mut lokasi);
-    ipf_get_data(&mut lokasi, &berkas_ipf, 0);
-
-     */
 }

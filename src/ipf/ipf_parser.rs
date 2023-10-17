@@ -1,4 +1,6 @@
-use std::io::{Cursor, Read, Seek};
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read, Seek};
+use std::time::Instant;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
@@ -17,7 +19,7 @@ extern "C" {
 const HEADER_LOCATION: i64 = -24;
 const MAGIC_NUMBER: usize = 4;
 
-pub(crate) fn ipf_parse(ipf_file: &mut std::fs::File) -> IpfFile {
+pub(crate) fn ipf_parse(ipf_file: &mut BufReader<File>) -> IpfFile {
     let mut ipf_data = IpfFile::default();
     ipf_file
         .seek(std::io::SeekFrom::End(HEADER_LOCATION))
@@ -41,9 +43,8 @@ pub(crate) fn ipf_parse(ipf_file: &mut std::fs::File) -> IpfFile {
             ipf_data.footer.file_table_pointer as u64,
         ))
         .unwrap();
-    let mut pb = pbr::ProgressBar::new(ipf_data.footer.file_count as u64);
-    pb.format("╢▌▌░╟");
-    println!("Start parsing IPF data.");
+    println!("Start parsing {} IPF's data", ipf_data.footer.file_count);
+    let start = Instant::now();
     for i in 0..ipf_data.footer.file_count {
         let mut ipf_file_table = IPFFileTable::default();
         ipf_file_table.idx = i as i32;
@@ -67,12 +68,14 @@ pub(crate) fn ipf_parse(ipf_file: &mut std::fs::File) -> IpfFile {
         ipf_file
             .seek(std::io::SeekFrom::Start(current_position))
             .unwrap();
-        pb.inc();
     }
-    println!("\nFinish!");
+
+    let duration = start.elapsed();
+    println!("Time elapsed is : {:?}", duration);
+    println!("Finish!");
     ipf_data
 }
-pub(crate) fn ipf_get_data(ipf_file: &mut std::fs::File, ipf_data: &IpfFile, index_num: usize) {
+pub(crate) fn ipf_get_data(ipf_file: &mut BufReader<File>, ipf_data: &IpfFile, index_num: usize) {
     let _default_decompressed = [
         "jpg", "fsb", "mp3", "fdp", "fev", "xml", "ies", "png", "tga", "lua",
     ];
@@ -144,7 +147,7 @@ pub(crate) fn ipf_get_data(ipf_file: &mut std::fs::File, ipf_data: &IpfFile, ind
     }
 }
 
-fn ipf_read_data(file: &mut std::fs::File, offset: u32, length: u32) -> Vec<u8> {
+fn ipf_read_data(file: &mut BufReader<File>, offset: u32, length: u32) -> Vec<u8> {
     file.seek(std::io::SeekFrom::Start(offset as u64)).unwrap();
     let mut data = vec![0; length as usize];
     file.read_exact(&mut data).unwrap();

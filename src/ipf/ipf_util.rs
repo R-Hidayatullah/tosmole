@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::fs::File;
+use std::io::BufReader;
 
 use byteorder::ReadBytesExt;
 use serde::{Deserialize, Serialize};
@@ -48,7 +49,7 @@ impl TreeNode {
     }
 }
 
-pub(crate) fn ipf_read_string(file: &mut File, length: u16) -> String {
+pub(crate) fn ipf_read_string(file: &mut BufReader<File>, length: u16) -> String {
     let mut text = String::new();
     for _ in 0..length {
         let character = file.read_u8().unwrap();

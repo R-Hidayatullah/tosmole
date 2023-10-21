@@ -7,11 +7,13 @@ use std::io::BufReader;
 mod fsb;
 mod ies;
 mod ipf;
+mod render;
 mod xac;
 mod xml;
 mod xsm;
 
 fn main() {
+    /*
     let args: Vec<String> = std::env::args().collect();
     let args_count = std::env::args().count();
     if args_count == 1 {
@@ -37,4 +39,21 @@ fn main() {
         println!("\nFinish parsing index : {}", index_list);
         {}
     }
+
+     */
+    let mut path =
+        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\TreeOfSavior\\data\\".to_string();
+    let filename = "bg_hi.ipf";
+    path.push_str(filename);
+    let path_file = path;
+    let index_list = 33;
+    println!("Parse index : {}", index_list);
+    let mut location = BufReader::new(File::open(path_file).unwrap());
+    let ipf_data = ipf_parse(&mut location);
+    ipf_get_data(
+        &mut location,
+        &ipf_data,
+        index_list.to_string().parse::<usize>().unwrap(),
+    );
+    println!("\nFinish parsing index : {}", index_list);
 }

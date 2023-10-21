@@ -57,37 +57,37 @@ fn read_header<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a
 fn read_chunk<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a mut XacFile {
     while file.stream_position().unwrap() < file.stream_len().unwrap() {
         let chunk = XacChunk {
-            type_id: file.read_i32::<LittleEndian>().unwrap(),
-            length: file.read_i32::<LittleEndian>().unwrap(),
-            version: file.read_i32::<LittleEndian>().unwrap(),
+            type_id: file.read_u32::<LittleEndian>().unwrap(),
+            length: file.read_u32::<LittleEndian>().unwrap(),
+            version: file.read_u32::<LittleEndian>().unwrap(),
         };
         let position = file.stream_position().unwrap();
 
-        if chunk.type_id == XacMeshId as i32 {
+        if chunk.type_id == XacMeshId as u32 {
             read_mesh(file, xac);
         }
 
-        if chunk.type_id == XacSkinningId as i32 {
+        if chunk.type_id == XacSkinningId as u32 {
             read_skinning(file, xac);
         }
-        if chunk.type_id == XacMaterialDefinitionId as i32 {
+        if chunk.type_id == XacMaterialDefinitionId as u32 {
             read_material_definition(file, xac);
         }
-        if chunk.type_id == XacShaderMaterialId as i32 {
+        if chunk.type_id == XacShaderMaterialId as u32 {
             read_shader_material(file, xac);
         }
 
-        if chunk.type_id == XacMetadataId as i32 {
+        if chunk.type_id == XacMetadataId as u32 {
             read_metadata(file, xac);
         }
-        if chunk.type_id == XacNodeHierarchyId as i32 {
+        if chunk.type_id == XacNodeHierarchyId as u32 {
             read_node_hierarchy(file, xac);
         }
-        if chunk.type_id == XacMorphTargetId as i32 {
+        if chunk.type_id == XacMorphTargetId as u32 {
             //Unfinished
             println!("Morph Target Data Found!");
         }
-        if chunk.type_id == XacMaterialTotalId as i32 {
+        if chunk.type_id == XacMaterialTotalId as u32 {
             read_material_total(file, xac);
         }
 
@@ -99,7 +99,7 @@ fn read_chunk<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a 
 
 fn read_metadata<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a mut XacFile {
     xac.metadata.reposition_mask = file.read_u32::<LittleEndian>().unwrap();
-    xac.metadata.repositioning_node = file.read_i32::<LittleEndian>().unwrap();
+    xac.metadata.repositioning_node = file.read_u32::<LittleEndian>().unwrap();
     xac.metadata.exporter_major_version = file.read_u8().unwrap();
     xac.metadata.exporter_minor_version = file.read_u8().unwrap();
     file.read_u8().unwrap(); //Padding
@@ -116,8 +116,8 @@ fn read_node_hierarchy<'a, R: Read + Seek>(
     file: &'a mut R,
     xac: &'a mut XacFile,
 ) -> &'a mut XacFile {
-    xac.node_hierarchy.num_nodes = file.read_i32::<LittleEndian>().unwrap();
-    xac.node_hierarchy.num_root_nodes = file.read_i32::<LittleEndian>().unwrap();
+    xac.node_hierarchy.num_nodes = file.read_u32::<LittleEndian>().unwrap();
+    xac.node_hierarchy.num_root_nodes = file.read_u32::<LittleEndian>().unwrap();
 
     for _ in 0..xac.node_hierarchy.num_nodes {
         let mut nodes = XacNode::default();
@@ -133,9 +133,9 @@ fn read_node_hierarchy<'a, R: Read + Seek>(
         file.read_i32::<LittleEndian>().unwrap(); //Padding
         file.read_i32::<LittleEndian>().unwrap(); //Padding
 
-        nodes.parent_node_id = file.read_i32::<LittleEndian>().unwrap();
-        nodes.num_children = file.read_i32::<LittleEndian>().unwrap();
-        nodes.include_inbounds_calc = file.read_i32::<LittleEndian>().unwrap();
+        nodes.parent_node_id = file.read_u32::<LittleEndian>().unwrap();
+        nodes.num_children = file.read_u32::<LittleEndian>().unwrap();
+        nodes.include_inbounds_calc = file.read_u32::<LittleEndian>().unwrap();
 
         nodes.transform = xac_read_matrix44(file);
         nodes.importance_factor = file.read_f32::<LittleEndian>().unwrap();
@@ -151,9 +151,9 @@ fn read_material_total<'a, R: Read + Seek>(
     file: &'a mut R,
     xac: &'a mut XacFile,
 ) -> &'a mut XacFile {
-    xac.material_totals.num_total_materials = file.read_i32::<LittleEndian>().unwrap();
-    xac.material_totals.num_standard_materials = file.read_i32::<LittleEndian>().unwrap();
-    xac.material_totals.num_fx_materials = file.read_i32::<LittleEndian>().unwrap();
+    xac.material_totals.num_total_materials = file.read_u32::<LittleEndian>().unwrap();
+    xac.material_totals.num_standard_materials = file.read_u32::<LittleEndian>().unwrap();
+    xac.material_totals.num_fx_materials = file.read_u32::<LittleEndian>().unwrap();
     xac
 }
 
@@ -200,19 +200,19 @@ fn read_shader_material<'a, R: Read + Seek>(
     xac: &'a mut XacFile,
 ) -> &'a mut XacFile {
     let mut shader_data = XacShaderMaterial::default();
-    shader_data.num_int = file.read_i32::<LittleEndian>().unwrap();
-    shader_data.num_float = file.read_i32::<LittleEndian>().unwrap();
-    file.read_i32::<LittleEndian>().unwrap(); //Padding
-    shader_data.num_bool = file.read_i32::<LittleEndian>().unwrap();
-    shader_data.flag = file.read_i32::<LittleEndian>().unwrap();
-    shader_data.num_string = file.read_i32::<LittleEndian>().unwrap();
+    shader_data.num_int = file.read_u32::<LittleEndian>().unwrap();
+    shader_data.num_float = file.read_u32::<LittleEndian>().unwrap();
+    file.read_u32::<LittleEndian>().unwrap(); //Padding
+    shader_data.num_bool = file.read_u32::<LittleEndian>().unwrap();
+    shader_data.flag = file.read_u32::<LittleEndian>().unwrap();
+    shader_data.num_string = file.read_u32::<LittleEndian>().unwrap();
     shader_data.name_material = xac_read_string(file);
     shader_data.name_shader = xac_read_string(file);
 
     for _ in 0..shader_data.num_int {
         shader_data.int_property.push(XacIntProperties {
             name_properties: xac_read_string(file),
-            value: file.read_i32::<LittleEndian>().unwrap(),
+            value: file.read_u32::<LittleEndian>().unwrap(),
         });
     }
 
@@ -245,12 +245,12 @@ fn read_shader_material<'a, R: Read + Seek>(
 
 fn read_mesh<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a mut XacFile {
     let mut mesh_info = XacMesh::default();
-    mesh_info.node_id = file.read_i32::<LittleEndian>().unwrap();
-    mesh_info.num_influence_ranges = file.read_i32::<LittleEndian>().unwrap();
-    mesh_info.num_vertices = file.read_i32::<LittleEndian>().unwrap();
-    mesh_info.num_indices = file.read_i32::<LittleEndian>().unwrap();
-    mesh_info.num_sub_meshes = file.read_i32::<LittleEndian>().unwrap();
-    mesh_info.num_attribute_layer = file.read_i32::<LittleEndian>().unwrap();
+    mesh_info.node_id = file.read_u32::<LittleEndian>().unwrap();
+    mesh_info.num_influence_ranges = file.read_u32::<LittleEndian>().unwrap();
+    mesh_info.num_vertices = file.read_u32::<LittleEndian>().unwrap();
+    mesh_info.num_indices = file.read_u32::<LittleEndian>().unwrap();
+    mesh_info.num_sub_meshes = file.read_u32::<LittleEndian>().unwrap();
+    mesh_info.num_attribute_layer = file.read_u32::<LittleEndian>().unwrap();
     mesh_info.collision_mesh = xac_read_boolean(file);
     file.read_u8().unwrap(); //Padding
     file.read_u8().unwrap(); //Padding
@@ -258,14 +258,14 @@ fn read_mesh<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a m
 
     for _ in 0..mesh_info.num_attribute_layer {
         let mut vertices_attribute = mesh_info.vertices_attribute;
-        vertices_attribute.type_id = file.read_i32::<LittleEndian>().unwrap();
-        vertices_attribute.attribute_size = file.read_i32::<LittleEndian>().unwrap();
+        vertices_attribute.type_id = file.read_u32::<LittleEndian>().unwrap();
+        vertices_attribute.attribute_size = file.read_u32::<LittleEndian>().unwrap();
         vertices_attribute.keep_original = xac_read_boolean(file);
         vertices_attribute.scale_factor = xac_read_boolean(file);
         file.read_u8().unwrap(); //Padding
         file.read_u8().unwrap(); //Padding
 
-        if vertices_attribute.type_id == XacPositionId as i32 {
+        if vertices_attribute.type_id == XacPositionId as u32 {
             for _ in 0..mesh_info.num_vertices {
                 vertices_attribute
                     .vertex_positions
@@ -273,12 +273,12 @@ fn read_mesh<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a m
             }
         }
 
-        if vertices_attribute.type_id == XacNormalId as i32 {
+        if vertices_attribute.type_id == XacNormalId as u32 {
             for _ in 0..mesh_info.num_vertices {
                 vertices_attribute.vertex_normals.push(xac_read_vec3d(file))
             }
         }
-        if vertices_attribute.type_id == XacTangentId as i32 {
+        if vertices_attribute.type_id == XacTangentId as u32 {
             if vertices_attribute.vertex_tangents.is_empty() {
                 for _ in 0..mesh_info.num_vertices {
                     vertices_attribute
@@ -293,27 +293,27 @@ fn read_mesh<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a m
                 }
             }
         }
-        if vertices_attribute.type_id == XacUVCoordId as i32 {
+        if vertices_attribute.type_id == XacUVCoordId as u32 {
             for _ in 0..mesh_info.num_vertices {
                 vertices_attribute.vertex_uvs.push(xac_read_vec2d(file));
             }
         }
 
-        if vertices_attribute.type_id == XacColor32Id as i32 {
+        if vertices_attribute.type_id == XacColor32Id as u32 {
             for _ in 0..mesh_info.num_vertices {
                 vertices_attribute
                     .vertex_colors_32
                     .push(xac_read_color8(file));
             }
         }
-        if vertices_attribute.type_id == XacInfluenceRangeId as i32 {
+        if vertices_attribute.type_id == XacInfluenceRangeId as u32 {
             for _ in 0..mesh_info.num_vertices {
                 vertices_attribute
                     .vertex_influences
                     .push(file.read_u32::<LittleEndian>().unwrap());
             }
         }
-        if vertices_attribute.type_id == XacColor128Id as i32 {
+        if vertices_attribute.type_id == XacColor128Id as u32 {
             for _ in 0..mesh_info.num_vertices {
                 vertices_attribute
                     .vertex_colors_128
@@ -325,20 +325,20 @@ fn read_mesh<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a m
 
     for _ in 0..mesh_info.num_sub_meshes {
         let mut sub_mesh = XacSubMesh::default();
-        sub_mesh.num_indices = file.read_i32::<LittleEndian>().unwrap();
-        sub_mesh.num_vertices = file.read_i32::<LittleEndian>().unwrap();
-        sub_mesh.material_id = file.read_i32::<LittleEndian>().unwrap();
-        sub_mesh.num_bones = file.read_i32::<LittleEndian>().unwrap();
+        sub_mesh.num_indices = file.read_u32::<LittleEndian>().unwrap();
+        sub_mesh.num_vertices = file.read_u32::<LittleEndian>().unwrap();
+        sub_mesh.material_id = file.read_u32::<LittleEndian>().unwrap();
+        sub_mesh.num_bones = file.read_u32::<LittleEndian>().unwrap();
 
         for _ in 0..sub_mesh.num_indices {
             sub_mesh
                 .relative_indices
-                .push(file.read_i32::<LittleEndian>().unwrap());
+                .push(file.read_u32::<LittleEndian>().unwrap());
         }
         for _ in 0..sub_mesh.num_bones {
             sub_mesh
                 .bone_id
-                .push(file.read_i32::<LittleEndian>().unwrap());
+                .push(file.read_u32::<LittleEndian>().unwrap());
         }
         mesh_info.sub_mesh.push(sub_mesh);
     }
@@ -347,9 +347,9 @@ fn read_mesh<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a m
 }
 
 fn read_skinning<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &'a mut XacFile {
-    xac.skinning.node_id = file.read_i32::<LittleEndian>().unwrap();
-    xac.skinning.num_local_bones = file.read_i32::<LittleEndian>().unwrap();
-    xac.skinning.num_influences = file.read_i32::<LittleEndian>().unwrap();
+    xac.skinning.node_id = file.read_u32::<LittleEndian>().unwrap();
+    xac.skinning.num_local_bones = file.read_u32::<LittleEndian>().unwrap();
+    xac.skinning.num_influences = file.read_u32::<LittleEndian>().unwrap();
     xac.skinning.collision_mesh = xac_read_boolean(file);
     file.read_u8().unwrap(); //Padding
     file.read_u8().unwrap(); //Padding
@@ -358,13 +358,13 @@ fn read_skinning<'a, R: Read + Seek>(file: &'a mut R, xac: &'a mut XacFile) -> &
     for _ in 0..xac.skinning.num_influences {
         xac.skinning.influence_data.push(XacInfluenceData {
             weight: file.read_f32::<LittleEndian>().unwrap(),
-            bone_id: file.read_i32::<LittleEndian>().unwrap(),
+            bone_id: file.read_u32::<LittleEndian>().unwrap(),
         });
     }
     for _ in 0..xac.mesh_data[xac.mesh_data.len() - 1usize].num_influence_ranges {
         xac.skinning.influence_range.push(XacInfluenceRange {
-            first_influence_index: file.read_i32::<LittleEndian>().unwrap(),
-            num_influences: file.read_i32::<LittleEndian>().unwrap(),
+            first_influence_index: file.read_u32::<LittleEndian>().unwrap(),
+            num_influences: file.read_u32::<LittleEndian>().unwrap(),
         });
     }
     xac

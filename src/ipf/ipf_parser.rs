@@ -7,6 +7,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use crate::ies::ies_parser::ies_parse;
 use crate::ipf::ipf_struct::{IPFFileTable, IpfFile};
 use crate::ipf::ipf_util::ipf_read_string;
+use crate::render::{self};
 use crate::xac::xac_parser::xac_parse;
 use crate::xsm::xsm_parser::xsm_parse;
 
@@ -112,15 +113,20 @@ pub(crate) fn ipf_get_data(ipf_file: &mut BufReader<File>, ipf_data: &IpfFile, i
     println!("{:?}", ipf_data.footer);
     println!("{:?}", ipf_table);
     if extension.eq("xac") {
-        //let mut berkas = File::create("berkas").unwrap();
-        //berkas.write_all(&data).unwrap();
         let mut _data = Cursor::new(data);
         let xac_file = xac_parse(&mut _data);
         println!();
         println!("{:?}", xac_file.header);
-        println!("{:?}", xac_file.metadata);
-        //let mut my_file = File::create(ipf_table.filename.clone() + "22.json").unwrap();
-        //serde_json::to_writer_pretty(my_file, &xac_file).unwrap();
+        println!("{:?}\n", xac_file.metadata);
+        let bevy_mesh = render::render_util::xac_to_mesh(xac_file);
+        println!("\nBevymesh node mesh len : {}", &bevy_mesh.len());
+        for bev in bevy_mesh {
+            println!("\nBevymesh mesh len : {}", &bev.len());
+
+            for va in bev {
+                println!("Name : {}", va.name_texture);
+            }
+        }
     } else if extension.eq("xsm") {
         let mut _data = Cursor::new(data);
         let xsm_file = xsm_parse(&mut _data);

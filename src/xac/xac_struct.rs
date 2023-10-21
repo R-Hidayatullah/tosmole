@@ -55,9 +55,9 @@ pub(crate) struct XacMatrix44 {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacChunk {
-    pub(crate) type_id: i32,
-    pub(crate) length: i32,
-    pub(crate) version: i32,
+    pub(crate) type_id: u32,
+    pub(crate) length: u32,
+    pub(crate) version: u32,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -84,7 +84,7 @@ pub(crate) struct XacHeader {
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacMetaData {
     pub(crate) reposition_mask: u32,
-    pub(crate) repositioning_node: i32,
+    pub(crate) repositioning_node: u32,
     pub(crate) exporter_major_version: u8,
     pub(crate) exporter_minor_version: u8,
     pub(crate) retarget_root_offset: f32,
@@ -96,8 +96,8 @@ pub(crate) struct XacMetaData {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacNodeHierarchy {
-    pub(crate) num_nodes: i32,
-    pub(crate) num_root_nodes: i32,
+    pub(crate) num_nodes: u32,
+    pub(crate) num_root_nodes: u32,
     pub(crate) node: Vec<XacNode>,
 }
 
@@ -107,9 +107,9 @@ pub(crate) struct XacNode {
     pub(crate) scale_rotation: XacQuaternion,
     pub(crate) position: XacVec3d,
     pub(crate) scale: XacVec3d,
-    pub(crate) parent_node_id: i32,
-    pub(crate) num_children: i32,
-    pub(crate) include_inbounds_calc: i32,
+    pub(crate) parent_node_id: u32,
+    pub(crate) num_children: u32,
+    pub(crate) include_inbounds_calc: u32,
     pub(crate) transform: XacMatrix44,
     pub(crate) importance_factor: f32,
     pub(crate) name: String,
@@ -117,9 +117,9 @@ pub(crate) struct XacNode {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacMaterialTotals {
-    pub(crate) num_total_materials: i32,
-    pub(crate) num_standard_materials: i32,
-    pub(crate) num_fx_materials: i32,
+    pub(crate) num_total_materials: u32,
+    pub(crate) num_standard_materials: u32,
+    pub(crate) num_fx_materials: u32,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -155,7 +155,7 @@ pub(crate) struct XacMaterialLayer {
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacIntProperties {
     pub(crate) name_properties: String,
-    pub(crate) value: i32,
+    pub(crate) value: u32,
 }
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacFloatProperties {
@@ -177,11 +177,11 @@ pub(crate) struct XacStringProperties {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacShaderMaterial {
-    pub(crate) num_int: i32,
-    pub(crate) num_float: i32,
-    pub(crate) num_bool: i32,
-    pub(crate) num_string: i32,
-    pub(crate) flag: i32,
+    pub(crate) num_int: u32,
+    pub(crate) num_float: u32,
+    pub(crate) num_bool: u32,
+    pub(crate) num_string: u32,
+    pub(crate) flag: u32,
     pub(crate) name_material: String,
     pub(crate) name_shader: String,
     pub(crate) int_property: Vec<XacIntProperties>,
@@ -192,8 +192,8 @@ pub(crate) struct XacShaderMaterial {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacVerticesAttribute {
-    pub(crate) type_id: i32,
-    pub(crate) attribute_size: i32,
+    pub(crate) type_id: u32,
+    pub(crate) attribute_size: u32,
     pub(crate) keep_original: bool,
     pub(crate) scale_factor: bool,
     pub(crate) vertex_positions: Vec<XacVec3d>,
@@ -208,22 +208,22 @@ pub(crate) struct XacVerticesAttribute {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacSubMesh {
-    pub(crate) num_indices: i32,
-    pub(crate) num_vertices: i32,
-    pub(crate) material_id: i32,
-    pub(crate) num_bones: i32,
-    pub(crate) relative_indices: Vec<i32>,
-    pub(crate) bone_id: Vec<i32>,
+    pub(crate) num_indices: u32,
+    pub(crate) num_vertices: u32,
+    pub(crate) material_id: u32,
+    pub(crate) num_bones: u32,
+    pub(crate) relative_indices: Vec<u32>,
+    pub(crate) bone_id: Vec<u32>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacMesh {
-    pub(crate) node_id: i32,
-    pub(crate) num_influence_ranges: i32,
-    pub(crate) num_vertices: i32,
-    pub(crate) num_indices: i32,
-    pub(crate) num_sub_meshes: i32,
-    pub(crate) num_attribute_layer: i32,
+    pub(crate) node_id: u32,
+    pub(crate) num_influence_ranges: u32,
+    pub(crate) num_vertices: u32,
+    pub(crate) num_indices: u32,
+    pub(crate) num_sub_meshes: u32,
+    pub(crate) num_attribute_layer: u32,
     pub(crate) collision_mesh: bool,
     pub(crate) vertices_attribute: XacVerticesAttribute,
     pub(crate) sub_mesh: Vec<XacSubMesh>,
@@ -232,19 +232,19 @@ pub(crate) struct XacMesh {
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacInfluenceData {
     pub(crate) weight: f32,
-    pub(crate) bone_id: i32,
+    pub(crate) bone_id: u32,
 }
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacInfluenceRange {
-    pub(crate) first_influence_index: i32,
-    pub(crate) num_influences: i32,
+    pub(crate) first_influence_index: u32,
+    pub(crate) num_influences: u32,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub(crate) struct XacSkinning {
-    pub(crate) node_id: i32,
-    pub(crate) num_local_bones: i32,
-    pub(crate) num_influences: i32,
+    pub(crate) node_id: u32,
+    pub(crate) num_local_bones: u32,
+    pub(crate) num_influences: u32,
     pub(crate) collision_mesh: bool,
     pub(crate) influence_data: Vec<XacInfluenceData>,
     pub(crate) influence_range: Vec<XacInfluenceRange>,

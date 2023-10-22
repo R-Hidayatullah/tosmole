@@ -1,9 +1,5 @@
 #![feature(seek_stream_len)]
 
-use crate::ipf::ipf_parser::{ipf_get_data, ipf_parse};
-use std::fs::File;
-use std::io::BufReader;
-
 mod fsb;
 mod ies;
 mod ipf;
@@ -41,19 +37,5 @@ fn main() {
     }
 
      */
-    let mut path =
-        "C:\\Program Files (x86)\\Steam\\steamapps\\common\\TreeOfSavior\\data\\".to_string();
-    let filename = "bg_hi.ipf";
-    path.push_str(filename);
-    let path_file = path;
-    let index_list = 33;
-    println!("Parse index : {}", index_list);
-    let mut location = BufReader::new(File::open(path_file).unwrap());
-    let ipf_data = ipf_parse(&mut location);
-    ipf_get_data(
-        &mut location,
-        &ipf_data,
-        index_list.to_string().parse::<usize>().unwrap(),
-    );
-    println!("\nFinish parsing index : {}", index_list);
+    render::render_model::render();
 }

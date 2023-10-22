@@ -15,6 +15,8 @@ pub(crate) fn xac_to_mesh(xac_file: XacFile) -> Vec<Vec<BevyMesh>> {
 
     for mesh_node in xac_file.mesh_data {
         let mut meshes = Vec::new();
+        let mut number: usize = 0;
+
         for sub_mesh in mesh_node.sub_mesh {
             let mut submeshes = BevyMesh::default();
             if sub_mesh.material_id >= 1 {
@@ -22,7 +24,7 @@ pub(crate) fn xac_to_mesh(xac_file: XacFile) -> Vec<Vec<BevyMesh>> {
                     .get((sub_mesh.material_id % num_material) as usize)
                     .unwrap()
                     .to_string();
-                for num in 0..sub_mesh.num_vertices as usize {
+                for num in number + 0..number + sub_mesh.num_vertices as usize {
                     if mesh_node.vertices_attribute.vertex_positions.len() != 0 {
                         submeshes.positions.push([
                             mesh_node
@@ -123,6 +125,8 @@ pub(crate) fn xac_to_mesh(xac_file: XacFile) -> Vec<Vec<BevyMesh>> {
                                 .w,
                         ]);
                     }
+
+                    number = number + 1;
                 }
                 for num_uvs in 0..sub_mesh.num_vertices as usize {
                     submeshes.uv_set.push([

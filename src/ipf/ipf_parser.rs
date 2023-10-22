@@ -5,12 +5,14 @@ use std::time::Instant;
 use byteorder::{LittleEndian, ReadBytesExt};
 
 use crate::ies::ies_parser::ies_parse;
+use crate::ies::ies_struct::IesFile;
 use crate::ipf::ipf_struct::{IPFFileTable, IpfFile};
 use crate::ipf::ipf_util::ipf_read_string;
 use crate::render::{self};
 use crate::xac::xac_parser::xac_parse;
+use crate::xac::xac_struct::XacFile;
 use crate::xsm::xsm_parser::xsm_parse;
-
+use crate::xsm::xsm_structs::Xsm;
 #[link(name = "ipf_utility")]
 extern "C" {
     pub fn ipf_decrypt(buffer: *mut u8, size: usize);
@@ -76,6 +78,7 @@ pub(crate) fn ipf_parse(ipf_file: &mut BufReader<File>) -> IpfFile {
     println!("Finish!");
     ipf_data
 }
+
 pub(crate) fn ipf_get_data(ipf_file: &mut BufReader<File>, ipf_data: &IpfFile, index_num: usize) {
     let _default_decompressed = [
         "jpg", "fsb", "mp3", "fdp", "fev", "xml", "ies", "png", "tga", "lua",
@@ -150,6 +153,202 @@ pub(crate) fn ipf_get_data(ipf_file: &mut BufReader<File>, ipf_data: &IpfFile, i
         println!("Image data.");
     } else {
         println!("Unknown file type : {}", &extension);
+    }
+}
+
+pub(crate) fn ipf_get_data_xac(
+    ipf_file: &mut BufReader<File>,
+    ipf_data: &IpfFile,
+    index_num: usize,
+) -> Option<XacFile> {
+    let _default_decompressed = [
+        "jpg", "fsb", "mp3", "fdp", "fev", "xml", "ies", "png", "tga", "lua",
+    ];
+    let _not_encrypted = [".mp3", ".fsb", ".jpg"];
+    let ipf_table = &ipf_data.file_table[index_num];
+    let mut data = ipf_read_data(
+        ipf_file,
+        ipf_table.file_pointer,
+        ipf_table.file_size_compressed,
+    );
+
+    let extension = std::path::Path::new(ipf_table.filename.as_str())
+        .extension()
+        .unwrap_or("".as_ref())
+        .to_str()
+        .unwrap();
+
+    if extension.ne("fsb") {
+        data = ipf_decompress(
+            &mut data,
+            ipf_data.footer.new_version,
+            ipf_table.file_size_uncompressed,
+        );
+    }
+
+    //let output = data.clone();
+
+    let _text_filename = [
+        "xml", "effect", "skn", "3deffect", "3dworld", "3drender", "3dprop", "3dzone", "fx", "fxh",
+        "h", "lst", "export", "skn", "fdp", "txt", "sani", "xsd", "sprbin", "fdp", "lua", "h",
+    ];
+
+    let _image_filename = ["png", "jpg", "dds", "gif", "jpeg", "bmp", "tga"];
+    println!("{:?}", ipf_data.footer);
+    println!("{:?}", ipf_table);
+    if extension.eq("xac") {
+        let mut data = Cursor::new(data);
+        let mut xac_file = xac_parse(&mut data);
+        return Some(xac_file);
+    } else {
+        return None;
+    }
+}
+
+pub(crate) fn ipf_get_data_xsm(
+    ipf_file: &mut BufReader<File>,
+    ipf_data: &IpfFile,
+    index_num: usize,
+) -> Option<Xsm> {
+    let _default_decompressed = [
+        "jpg", "fsb", "mp3", "fdp", "fev", "xml", "ies", "png", "tga", "lua",
+    ];
+    let _not_encrypted = [".mp3", ".fsb", ".jpg"];
+    let ipf_table = &ipf_data.file_table[index_num];
+    let mut data = ipf_read_data(
+        ipf_file,
+        ipf_table.file_pointer,
+        ipf_table.file_size_compressed,
+    );
+
+    let extension = std::path::Path::new(ipf_table.filename.as_str())
+        .extension()
+        .unwrap_or("".as_ref())
+        .to_str()
+        .unwrap();
+
+    if extension.ne("fsb") {
+        data = ipf_decompress(
+            &mut data,
+            ipf_data.footer.new_version,
+            ipf_table.file_size_uncompressed,
+        );
+    }
+
+    //let output = data.clone();
+
+    let _text_filename = [
+        "xml", "effect", "skn", "3deffect", "3dworld", "3drender", "3dprop", "3dzone", "fx", "fxh",
+        "h", "lst", "export", "skn", "fdp", "txt", "sani", "xsd", "sprbin", "fdp", "lua", "h",
+    ];
+
+    let _image_filename = ["png", "jpg", "dds", "gif", "jpeg", "bmp", "tga"];
+    println!("{:?}", ipf_data.footer);
+    println!("{:?}", ipf_table);
+
+    if extension.eq("xsm") {
+        let mut data = Cursor::new(data);
+        let mut xsm_file = xsm_parse(&mut data);
+        return Some(xsm_file);
+    } else {
+        return None;
+    }
+}
+
+pub(crate) fn ipf_get_data_image(
+    ipf_file: &mut BufReader<File>,
+    ipf_data: &IpfFile,
+    index_num: usize,
+) -> Option<Vec<u8>> {
+    let _default_decompressed = [
+        "jpg", "fsb", "mp3", "fdp", "fev", "xml", "ies", "png", "tga", "lua",
+    ];
+    let _not_encrypted = [".mp3", ".fsb", ".jpg"];
+    let ipf_table = &ipf_data.file_table[index_num];
+    let mut data = ipf_read_data(
+        ipf_file,
+        ipf_table.file_pointer,
+        ipf_table.file_size_compressed,
+    );
+
+    let extension = std::path::Path::new(ipf_table.filename.as_str())
+        .extension()
+        .unwrap_or("".as_ref())
+        .to_str()
+        .unwrap();
+
+    if extension.ne("fsb") {
+        data = ipf_decompress(
+            &mut data,
+            ipf_data.footer.new_version,
+            ipf_table.file_size_uncompressed,
+        );
+    }
+
+    //let output = data.clone();
+
+    let _text_filename = [
+        "xml", "effect", "skn", "3deffect", "3dworld", "3drender", "3dprop", "3dzone", "fx", "fxh",
+        "h", "lst", "export", "skn", "fdp", "txt", "sani", "xsd", "sprbin", "fdp", "lua", "h",
+    ];
+
+    let _image_filename = ["png", "jpg", "dds", "gif", "jpeg", "bmp", "tga"];
+    println!("{:?}", ipf_data.footer);
+    println!("{:?}", ipf_table);
+
+    if _image_filename.contains(&extension) {
+        return Some(data);
+    } else {
+        return None;
+    }
+}
+
+pub(crate) fn ipf_get_data_ies(
+    ipf_file: &mut BufReader<File>,
+    ipf_data: &IpfFile,
+    index_num: usize,
+) -> Option<IesFile> {
+    let _default_decompressed = [
+        "jpg", "fsb", "mp3", "fdp", "fev", "xml", "ies", "png", "tga", "lua",
+    ];
+    let _not_encrypted = [".mp3", ".fsb", ".jpg"];
+    let ipf_table = &ipf_data.file_table[index_num];
+    let mut data = ipf_read_data(
+        ipf_file,
+        ipf_table.file_pointer,
+        ipf_table.file_size_compressed,
+    );
+
+    let extension = std::path::Path::new(ipf_table.filename.as_str())
+        .extension()
+        .unwrap_or("".as_ref())
+        .to_str()
+        .unwrap();
+
+    if extension.ne("fsb") {
+        data = ipf_decompress(
+            &mut data,
+            ipf_data.footer.new_version,
+            ipf_table.file_size_uncompressed,
+        );
+    }
+
+    //let output = data.clone();
+
+    let _text_filename = [
+        "xml", "effect", "skn", "3deffect", "3dworld", "3drender", "3dprop", "3dzone", "fx", "fxh",
+        "h", "lst", "export", "skn", "fdp", "txt", "sani", "xsd", "sprbin", "fdp", "lua", "h",
+    ];
+
+    let _image_filename = ["png", "jpg", "dds", "gif", "jpeg", "bmp", "tga"];
+    println!("{:?}", ipf_data.footer);
+    println!("{:?}", ipf_table);
+    if extension.eq("ies") {
+        let mut data = Cursor::new(data);
+        let mut ies_file = ies_parse(&mut data);
+        return Some(ies_file);
+    } else {
+        return None;
     }
 }
 

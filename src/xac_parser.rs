@@ -557,14 +557,14 @@ impl XacFile {
 
         for _ in 0..mesh_info.num_attribute_layer {
             let mut vertices_attribute = mesh_info.vertices_attribute;
-            vertices_attribute.type_id = file.read_u32::<LittleEndian>().unwrap();
+            vertices_attribute.type_id = file.read_i32::<LittleEndian>().unwrap();
             vertices_attribute.attribute_size = file.read_u32::<LittleEndian>().unwrap();
             vertices_attribute.keep_original = self.xac_read_boolean(file);
             vertices_attribute.scale_factor = self.xac_read_boolean(file);
             file.read_u8().unwrap(); // Padding
             file.read_u8().unwrap(); // Padding
 
-            match vertices_attribute.type_id {
+            match vertices_attribute.type_id as u32 {
                 XacPositionId => {
                     for _ in 0..mesh_info.num_vertices {
                         vertices_attribute

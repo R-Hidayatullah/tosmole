@@ -83,7 +83,7 @@ struct XacMatrix44 {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct XacChunk {
-    type_id: u32,
+    type_id: i32,
     length: u32,
     version: u32,
 }
@@ -220,7 +220,7 @@ struct XacShaderMaterial {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct XacVerticesAttribute {
-    type_id: u32,
+    type_id: i32,
     attribute_size: u32,
     keep_original: bool,
     scale_factor: bool,
@@ -364,37 +364,37 @@ impl XacFile {
     fn read_chunk<R: Read + Seek>(&mut self, file: &mut R) -> io::Result<&mut Self> {
         while file.stream_position().unwrap() < file.stream_len().unwrap() {
             let chunk = XacChunk {
-                type_id: file.read_u32::<LittleEndian>().unwrap(),
+                type_id: file.read_i32::<LittleEndian>().unwrap(),
                 length: file.read_u32::<LittleEndian>().unwrap(),
                 version: file.read_u32::<LittleEndian>().unwrap(),
             };
             let position = file.stream_position().unwrap();
 
-            if chunk.type_id == XacChunkType::XacMeshId as u32 {
+            if chunk.type_id as u32 == XacChunkType::XacMeshId as u32 {
                 self.read_mesh(file)?;
             }
 
-            if chunk.type_id == XacChunkType::XacSkinningId as u32 {
+            if chunk.type_id as u32 == XacChunkType::XacSkinningId as u32 {
                 self.read_skinning(file)?;
             }
-            if chunk.type_id == XacChunkType::XacMaterialDefinitionId as u32 {
+            if chunk.type_id as u32 == XacChunkType::XacMaterialDefinitionId as u32 {
                 self.read_material_definition(file)?;
             }
-            if chunk.type_id == XacChunkType::XacShaderMaterialId as u32 {
+            if chunk.type_id as u32 == XacChunkType::XacShaderMaterialId as u32 {
                 self.read_shader_material(file)?;
             }
 
-            if chunk.type_id == XacChunkType::XacMetadataId as u32 {
+            if chunk.type_id as u32 == XacChunkType::XacMetadataId as u32 {
                 self.read_metadata(file)?;
             }
-            if chunk.type_id == XacChunkType::XacNodeHierarchyId as u32 {
+            if chunk.type_id as u32 == XacChunkType::XacNodeHierarchyId as u32 {
                 self.read_node_hierarchy(file)?;
             }
-            if chunk.type_id == XacChunkType::XacMorphTargetId as u32 {
+            if chunk.type_id as u32 == XacChunkType::XacMorphTargetId as u32 {
                 // Unfinished
                 println!("Morph Target Data Found!");
             }
-            if chunk.type_id == XacChunkType::XacMaterialTotalId as u32 {
+            if chunk.type_id as u32 == XacChunkType::XacMaterialTotalId as u32 {
                 self.read_material_total(file)?;
             }
 

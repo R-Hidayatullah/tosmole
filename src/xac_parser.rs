@@ -111,8 +111,8 @@ struct XacHeader {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct XacMetaData {
-    reposition_mask: u32,
-    repositioning_node: u32,
+    reposition_mask: i32,
+    repositioning_node: i32,
     exporter_major_version: u8,
     exporter_minor_version: u8,
     retarget_root_offset: f32,
@@ -405,8 +405,8 @@ impl XacFile {
     }
 
     fn read_metadata<R: Read + Seek>(&mut self, file: &mut R) -> io::Result<&mut Self> {
-        self.metadata.reposition_mask = file.read_u32::<LittleEndian>().unwrap();
-        self.metadata.repositioning_node = file.read_u32::<LittleEndian>().unwrap();
+        self.metadata.reposition_mask = file.read_i32::<LittleEndian>().unwrap();
+        self.metadata.repositioning_node = file.read_i32::<LittleEndian>().unwrap();
         self.metadata.exporter_major_version = file.read_u8().unwrap();
         self.metadata.exporter_minor_version = file.read_u8().unwrap();
         file.read_u8().unwrap(); // Padding

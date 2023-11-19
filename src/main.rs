@@ -1,14 +1,16 @@
 #![feature(seek_stream_len)]
 
-use xsm_parser::XsmFile;
-
-use crate::xac_parser::XacFile;
+use ipf_parser::IpfFile;
 
 mod ies_parser;
+mod ipf_parser;
 mod xac_parser;
 mod xsm_parser;
 
 fn main() {
-    let xac_file = XacFile::load_from_file("tests\\archer_m_falconer01.xac").expect("");
-    println!("{:?}", &xac_file);
+    let mut ipf_data = IpfFile::load_from_file("tests\\379124_001001.ipf").expect("msg");
+
+    ipf_data
+        .get_data("tests\\379124_001001.ipf", 0)
+        .expect("msg");
 }

@@ -135,9 +135,9 @@ struct XacNode {
     scale_rotation: XacQuaternion,
     position: XacVec3d,
     scale: XacVec3d,
-    parent_node_id: u32,
+    parent_node_id: i32,
     num_children: u32,
-    include_inbounds_calc: u32,
+    include_inbounds_calc: i32,
     transform: XacMatrix44,
     importance_factor: f32,
     name: String,
@@ -183,7 +183,7 @@ struct XacMaterialLayer {
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct XacIntProperties {
     name_properties: String,
-    value: u32,
+    value: i32,
 }
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct XacFloatProperties {
@@ -238,7 +238,7 @@ struct XacVerticesAttribute {
 struct XacSubMesh {
     num_indices: u32,
     num_vertices: u32,
-    material_id: u32,
+    material_id: i32,
     num_bones: u32,
     relative_indices: Vec<u32>,
     bone_id: Vec<u32>,
@@ -246,7 +246,7 @@ struct XacSubMesh {
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct XacMesh {
-    node_id: u32,
+    node_id: i32,
     num_influence_ranges: u32,
     num_vertices: u32,
     num_indices: u32,
@@ -260,17 +260,17 @@ struct XacMesh {
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct XacInfluenceData {
     weight: f32,
-    bone_id: u32,
+    bone_id: i32,
 }
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct XacInfluenceRange {
-    first_influence_index: u32,
+    first_influence_index: i32,
     num_influences: u32,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct XacSkinning {
-    node_id: u32,
+    node_id: i32,
     num_local_bones: u32,
     num_influences: u32,
     collision_mesh: bool,
@@ -437,9 +437,9 @@ impl XacFile {
             file.read_i32::<LittleEndian>().unwrap(); //Padding
             file.read_i32::<LittleEndian>().unwrap(); //Padding
 
-            nodes.parent_node_id = file.read_u32::<LittleEndian>().unwrap();
+            nodes.parent_node_id = file.read_i32::<LittleEndian>().unwrap();
             nodes.num_children = file.read_u32::<LittleEndian>().unwrap();
-            nodes.include_inbounds_calc = file.read_u32::<LittleEndian>().unwrap();
+            nodes.include_inbounds_calc = file.read_i32::<LittleEndian>().unwrap();
 
             nodes.transform = self.xac_read_matrix44(file);
             nodes.importance_factor = file.read_f32::<LittleEndian>().unwrap();
@@ -508,7 +508,7 @@ impl XacFile {
         for _ in 0..shader_data.num_int {
             shader_data.int_property.push(XacIntProperties {
                 name_properties: self.xac_read_string(file)?,
-                value: file.read_u32::<LittleEndian>().unwrap(),
+                value: file.read_i32::<LittleEndian>().unwrap(),
             });
         }
 
@@ -544,7 +544,7 @@ impl XacFile {
 
     fn read_mesh<R: Read + Seek>(&mut self, file: &mut R) -> io::Result<&mut Self> {
         let mut mesh_info = XacMesh::default();
-        mesh_info.node_id = file.read_u32::<LittleEndian>().unwrap();
+        mesh_info.node_id = file.read_i32::<LittleEndian>().unwrap();
         mesh_info.num_influence_ranges = file.read_u32::<LittleEndian>().unwrap();
         mesh_info.num_vertices = file.read_u32::<LittleEndian>().unwrap();
         mesh_info.num_indices = file.read_u32::<LittleEndian>().unwrap();
@@ -631,7 +631,7 @@ impl XacFile {
             let mut sub_mesh = XacSubMesh::default();
             sub_mesh.num_indices = file.read_u32::<LittleEndian>().unwrap();
             sub_mesh.num_vertices = file.read_u32::<LittleEndian>().unwrap();
-            sub_mesh.material_id = file.read_u32::<LittleEndian>().unwrap();
+            sub_mesh.material_id = file.read_i32::<LittleEndian>().unwrap();
             sub_mesh.num_bones = file.read_u32::<LittleEndian>().unwrap();
 
             for _ in 0..sub_mesh.num_indices {
@@ -650,7 +650,7 @@ impl XacFile {
         Ok(self)
     }
     fn read_skinning<R: Read + Seek>(&mut self, file: &mut R) -> io::Result<&mut Self> {
-        self.skinning.node_id = file.read_u32::<LittleEndian>().unwrap();
+        self.skinning.node_id = file.read_i32::<LittleEndian>().unwrap();
         self.skinning.num_local_bones = file.read_u32::<LittleEndian>().unwrap();
         self.skinning.num_influences = file.read_u32::<LittleEndian>().unwrap();
         self.skinning.collision_mesh = self.xac_read_boolean(file);
@@ -661,12 +661,12 @@ impl XacFile {
         for _ in 0..self.skinning.num_influences {
             self.skinning.influence_data.push(XacInfluenceData {
                 weight: file.read_f32::<LittleEndian>().unwrap(),
-                bone_id: file.read_u32::<LittleEndian>().unwrap(),
+                bone_id: file.read_i32::<LittleEndian>().unwrap(),
             });
         }
         for _ in 0..self.mesh_data[self.mesh_data.len() - 1usize].num_influence_ranges {
             self.skinning.influence_range.push(XacInfluenceRange {
-                first_influence_index: file.read_u32::<LittleEndian>().unwrap(),
+                first_influence_index: file.read_i32::<LittleEndian>().unwrap(),
                 num_influences: file.read_u32::<LittleEndian>().unwrap(),
             });
         }

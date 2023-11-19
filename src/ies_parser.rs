@@ -115,6 +115,15 @@ impl IesFile {
     /// println!("{:?}", ies_data);
     /// ```
     pub fn load_from_file<P: AsRef<Path>>(file_path: P) -> io::Result<Self> {
+        // Check if the file extension is '.ies'
+        let file_path_str = file_path.as_ref().to_str().unwrap_or("");
+        if !file_path_str.to_lowercase().ends_with(".ies") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Invalid file extension. Expected '.ies'.",
+            ));
+        }
+
         // Open the file and create a buffered reader.
         let file = std::fs::File::open(file_path)?;
         let mut buf_reader = BufReader::new(file);

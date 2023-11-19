@@ -1,21 +1,14 @@
-use crate::ies_parser::IesFile;
+#![feature(seek_stream_len)]
+
+use xsm_parser::XsmFile;
+
+use crate::xac_parser::XacFile;
 
 mod ies_parser;
+mod xac_parser;
+mod xsm_parser;
 
 fn main() {
-    let ies_data =
-        IesFile::load_from_file("C:\\Users\\Ridwan Hidayatullah\\Videos\\tosmole\\tests\\cell.ies")
-            .unwrap();
-    println!("{:?}", &ies_data);
-    println!("columns len : {}", &ies_data.get_columns_length().unwrap());
-    println!("rows len : {}", &ies_data.get_rows_length().unwrap());
-    if let Some(data) = &ies_data.get_data_by_column_name_and_index("Script", 3) {
-        println!("Data: {:?}", data);
-    } else {
-        println!("Column or row not found");
-    }
-    let column_names = &ies_data.get_column_names();
-    for name in column_names {
-        println!("Column Name: {}", name);
-    }
+    let xac_file = XacFile::load_from_file("tests\\archer_m_falconer01.xac").expect("");
+    println!("{:?}", &xac_file);
 }

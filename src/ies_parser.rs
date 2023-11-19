@@ -52,8 +52,9 @@ impl Default for IesColumn {
         }
     }
 }
-
 impl Ord for IesColumn {
+    /// Implements ordering for `IesColumn` based on column type and position.
+    /// This is used for sorting columns, making it easier to navigate when viewing data in tables.
     fn cmp(&self, other: &Self) -> Ordering {
         match (&self.column_type, &other.column_type) {
             (IesColumnType::Float, IesColumnType::Float)
@@ -70,12 +71,16 @@ impl Ord for IesColumn {
 }
 
 impl PartialOrd for IesColumn {
+    /// Implements partial ordering for `IesColumn` based on column type and position.
+    /// This is used for sorting columns, making it easier to navigate when viewing data in tables.
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl PartialEq for IesColumn {
+    /// Implements equality comparison for `IesColumn` based on column type and position.
+    /// This is used for sorting columns, making it easier to navigate when viewing data in tables.
     fn eq(&self, other: &Self) -> bool {
         self.column_type == other.column_type && self.position == other.position
     }
@@ -92,14 +97,54 @@ const HEADER_NAME: usize = 128;
 const DATA_NAME: usize = 64;
 
 impl IesFile {
-    // Load data from a file
+    /// Load data from a file specified by the file path.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - A path to the IES file to be loaded.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the parsed `IesFile` or an IO error if the file cannot be read.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Example usage of loading an IES file from a specified path
+    /// let ies_data = IesFile::load_from_file("path/to/your/file.ies").unwrap();
+    /// println!("{:?}", ies_data);
+    /// ```
     pub fn load_from_file<P: AsRef<Path>>(file_path: P) -> io::Result<Self> {
+        // Open the file and create a buffered reader.
         let file = std::fs::File::open(file_path)?;
         let mut buf_reader = BufReader::new(file);
+
+        // Delegate to load_from_reader for further processing.
         Self::load_from_reader(&mut buf_reader)
     }
+
+    /// Load data from a byte vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - A vector of bytes containing the IES file data.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the parsed `IesFile` or an IO error if the byte vector is invalid.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Example usage of loading an IES file from a byte vector
+    /// let ies_data = IesFile::load_from_bytes(vec![/* your byte data here */]).unwrap();
+    /// println!("{:?}", ies_data);
+    /// ```
     pub fn load_from_bytes(mut bytes: Vec<u8>) -> io::Result<Self> {
+        // Create a cursor from the byte vector.
         let mut cursor = Cursor::new(&mut bytes);
+
+        // Delegate to load_from_reader for further processing.
         Self::load_from_reader(&mut cursor)
     }
 
@@ -111,8 +156,13 @@ impl IesFile {
         Ok(ies_data)
     }
     fn read_header<R: Read + Seek>(&mut self, file: &mut R) -> io::Result<&mut Self> {
+        // Read the header name from the binary data.
+        // The header name is stored as a fixed-size array of bytes (HEADER_NAME).
         let mut name = [0; HEADER_NAME];
         file.read_exact(&mut name).unwrap();
+
+        // Convert the byte array to a UTF-8 string, removing trailing null characters,
+        // and assign it to the `name` field in the header structure.
         self.header.name = std::str::from_utf8(&name)
             .unwrap()
             .trim_end_matches(char::from(0))
@@ -139,8 +189,12 @@ impl IesFile {
         for _ in 0..self.header.column_count {
             let mut column = IesColumn::default();
 
+            // Read the column name from the binary data.
+            // The column name is stored as a fixed-size array of bytes (DATA_NAME).
             let mut name = [0u8; DATA_NAME];
             file.read_exact(&mut name).unwrap();
+
+            // Decrypt the byte array representing the column name and assign it to the `name` field in the column structure.
             column.name = Self::decrypt_string(&name)?;
 
             let mut name_second = [0u8; DATA_NAME];
@@ -219,15 +273,24 @@ impl IesFile {
         Ok(self)
     }
 
+    /// Decrypts a byte array using a simple XOR operation.
+    /// The function applies a XOR operation using a predefined key (xor_key = 1) to each byte in the input data array.
+    /// The decrypted byte array is then converted into a UTF-8 string, removing trailing null characters ('\u{1}'),
+    /// and returning the resulting string.
     fn decrypt_string(data: &[u8]) -> io::Result<String> {
         let xor_key = 1;
+
+        // Apply XOR operation to each byte in the input data array to decrypt it.
         let decrypted_data: Vec<u8> = data.iter().map(|&byte| byte ^ xor_key).collect();
 
+        // Convert the decrypted byte array into a UTF-8 string.
+        // Trim trailing null characters ('\u{1}') and return the resulting string.
         Ok(String::from_utf8(decrypted_data)
             .unwrap()
             .trim_end_matches('\u{1}')
             .to_string())
     }
+
     pub fn get_columns_length(&self) -> io::Result<usize> {
         Ok(self.columns.len())
     }

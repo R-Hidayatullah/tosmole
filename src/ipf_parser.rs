@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::File,
     io::{self, BufReader, Cursor, Read, Seek},
     path::Path,
@@ -25,24 +26,24 @@ struct IPFFooter {
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
-struct IPFFileTable {
-    idx: i32,
-    filename_length: u16,
-    container_name_length: u16,
-    file_size_compressed: u32,
-    file_size_uncompressed: u32,
-    file_pointer: u32,
-    crc32: u32,
-    container_name: String,
-    filename: String,
-    directory_name: String,
-    content: Vec<u8>,
+pub struct IPFFileTable {
+    pub idx: i32,
+    pub filename_length: u16,
+    pub container_name_length: u16,
+    pub file_size_compressed: u32,
+    pub file_size_uncompressed: u32,
+    pub file_pointer: u32,
+    pub crc32: u32,
+    pub container_name: String,
+    pub filename: String,
+    pub directory_name: String,
+    pub content: Vec<u8>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct IpfFile {
     footer: IPFFooter,
-    file_table: Vec<IPFFileTable>,
+    pub file_table: Vec<IPFFileTable>,
 }
 
 const HEADER_LOCATION: i64 = -24;
@@ -234,19 +235,13 @@ impl IpfFile {
             let mut _data = Cursor::new(data);
         } else if extension.eq("xsm") {
             let mut _data = Cursor::new(data);
-            println!();
         } else if extension.eq("ies") {
             let mut _data = Cursor::new(data);
-            println!();
         } else if extension.eq("fsb") {
             let _data = Cursor::new(data);
-            println!();
         } else if _text_filename.contains(&extension) {
-            let xml_file = String::from_utf8(data).unwrap();
-            println!();
-            println!("{}", xml_file);
+            let xml_file = String::from_utf8_lossy(&data).to_string();
         } else if _image_filename.contains(&extension) {
-            println!("Image data.");
         } else {
             println!("Unknown file type : {}", &extension);
         }
@@ -258,5 +253,17 @@ impl IpfFile {
         let mut data = vec![0; length as usize];
         file.read_exact(&mut data).unwrap();
         data
+    }
+
+    pub fn into_hashmap(self) -> io::Result<HashMap<String, IPFFileTable>> {
+        let mut hashmap_data = HashMap::new();
+        let mut name_path = String::new();
+        for i in self.file_table {
+            name_path = i.directory_name.clone();
+            hashmap_data.insert(name_path, i);
+            name_path = "".to_string();
+        }
+
+        Ok(hashmap_data)
     }
 }

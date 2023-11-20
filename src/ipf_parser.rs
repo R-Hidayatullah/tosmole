@@ -267,3 +267,12 @@ impl IpfFile {
         Ok(hashmap_data)
     }
 }
+
+#[test]
+fn test_ipf_parser() {
+    // Provide the path to the test IPF file
+    let file_path = "tests/379124_001001.ipf";
+
+    // Parse the IPF file
+    let _ = IpfFile::load_from_file(file_path).expect("Failed to parse IPF file");
+}

@@ -747,7 +747,7 @@ impl XacFile {
 
 #[test]
 fn test_xac_parser() {
-    // Provide the path to the test IES file
+    // Provide the path to the test XAC file
     let file_path = "tests/archer_m_falconer01.xac";
 
     // Read the content of the file
@@ -756,6 +756,6 @@ fn test_xac_parser() {
     file.read_to_end(&mut file_content)
         .expect("Failed to read file content");
 
-    // Parse the IES file
-    let _ = XacFile::load_from_bytes(file_content).expect("Failed to parse XSM file");
+    // Parse the XAC file
+    let _ = XacFile::load_from_bytes(file_content).expect("Failed to parse XAC file");
 }

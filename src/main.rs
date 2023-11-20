@@ -2,8 +2,8 @@
 
 use ipf_parser::IpfFile;
 
+use std::time::Duration;
 use std::{fs, thread, time, time::Instant};
-
 mod ies_parser;
 mod ipf_parser;
 mod xac_parser;
@@ -44,13 +44,13 @@ fn main() {
     let combined_hashmap1 = process_folder(folder_path1);
 
     let elapsed_time1 = start_time_total.elapsed();
-    println!("Processed folder 1 in {:.2?}", elapsed_time1);
+    println!("Processed folder 1 in {:.3?}", elapsed_time1);
 
     let start_time2 = Instant::now();
     let combined_hashmap2 = process_folder(folder_path2);
 
     let elapsed_time2 = start_time2.elapsed();
-    println!("Processed folder 2 in {:.2?}", elapsed_time2);
+    println!("Processed folder 2 in {:.3?}", elapsed_time2);
 
     // Combine the results of both folders
     let mut combined_hashmap = combined_hashmap1;
@@ -58,5 +58,5 @@ fn main() {
 
     let elapsed_time_total = start_time_total.elapsed();
     println!("Combined HashMap Length: {:?}", combined_hashmap.len());
-    println!("Total processing time: {:.2?}", elapsed_time_total);
+    println!("Total processing time: {:.3?}", elapsed_time_total);
 }

@@ -298,7 +298,7 @@ impl XsmFile {
 
 #[test]
 fn test_xsm_parser() {
-    // Provide the path to the test IES file
+    // Provide the path to the test XSM file
     let file_path = "tests/npc_Catapult_wlk.xsm";
 
     // Read the content of the file
@@ -307,6 +307,6 @@ fn test_xsm_parser() {
     file.read_to_end(&mut file_content)
         .expect("Failed to read file content");
 
-    // Parse the IES file
+    // Parse the XSM file
     let _ = XsmFile::load_from_bytes(file_content).expect("Failed to parse XSM file");
 }

@@ -180,7 +180,11 @@ impl XsmFile {
     }
 
     fn read_chunk<R: Read + Seek>(&mut self, file: &mut R) -> io::Result<&mut Self> {
-        while file.stream_position().unwrap() < file.stream_len().unwrap() {
+        let current_pos = file.stream_position()?; // Get current position
+        let file_len = file.seek(SeekFrom::End(0))?; // Get file length
+        file.seek(SeekFrom::Start(current_pos))?; // Restore original position
+
+        while file.stream_position()? < file_len {
             let chunk = XsmChunk {
                 chunk_type: file.read_i32::<LittleEndian>().unwrap(),
                 length: file.read_i32::<LittleEndian>().unwrap(),

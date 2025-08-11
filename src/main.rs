@@ -3,6 +3,10 @@
 mod binary;
 mod ies;
 mod ipf;
+mod shared_formats;
+mod xac;
+mod xpm;
+mod xsm;
 
 use std::{fs::File, io};
 
@@ -19,8 +23,7 @@ fn main() -> io::Result<()> {
         let file = File::open(path)?;
         let mut reader = BinaryReader::new(file, Endian::Little);
         let root = IESRoot::read_from(&mut reader)?;
-        println!("File IES: {:#?}", root);
-        
+        println!("File IES: {:?}", root);
     }
 
     Ok(())

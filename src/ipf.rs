@@ -57,7 +57,7 @@ pub struct IPFHeader {
     pub new_version: u32,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct IPFFileTable {
     pub directory_name_length: u16,
     pub crc32: u32,
@@ -138,15 +138,34 @@ impl IPFFileTable {
         })
     }
 
+    fn is_no_decompress_ext(&self) -> bool {
+        let ignored_exts = [".fsb", ".jpg", ".mp3"];
+
+        let check_ext = |name: &str| {
+            name.rsplit('.')
+                .next()
+                .map(|e| format!(".{}", e.to_ascii_lowercase()))
+                .map_or(false, |ext| ignored_exts.contains(&ext.as_str()))
+        };
+
+        check_ext(&self.directory_name)
+    }
+
     pub fn extract<R: Read + Seek>(&self, reader: &mut BinaryReader<R>) -> io::Result<Vec<u8>> {
         reader.seek(SeekFrom::Start(self.file_pointer as u64))?;
 
         let mut encrypted_data = reader.read_vec(self.file_size_compressed as usize)?;
 
-        self.decrypt(&mut encrypted_data);
-        let decompressed_data = self.decompress(&encrypted_data)?;
+        if self.is_no_decompress_ext() {
+            // Just decrypt, do NOT decompress
+            Ok(encrypted_data)
+        } else {
+            self.decrypt(&mut encrypted_data);
 
-        Ok(decompressed_data)
+            // Decrypt and decompress as usual
+            let decompressed_data = self.decompress(&encrypted_data)?;
+            Ok(decompressed_data)
+        }
     }
 
     fn compute_crc32(&self, crc: u32, b: u8) -> u32 {

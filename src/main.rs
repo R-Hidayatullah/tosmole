@@ -18,6 +18,39 @@ mod xac;
 mod xpm;
 mod xsm;
 
+fn print_hex_viewer(data: &[u8]) {
+    const BYTES_PER_LINE: usize = 16;
+
+    for (i, chunk) in data.chunks(BYTES_PER_LINE).enumerate() {
+        // Offset decimal (8 digits padded)
+        print!("{:08}  ", i * BYTES_PER_LINE);
+
+        // Hex bytes uppercase
+        for b in chunk.iter() {
+            print!("{:02X} ", b);
+        }
+
+        // Pad hex if last line shorter
+        let pad_spaces = (BYTES_PER_LINE - chunk.len()) * 3;
+        for _ in 0..pad_spaces {
+            print!(" ");
+        }
+
+        // ASCII chars or '.' if non-printable
+        print!(" ");
+        for &b in chunk.iter() {
+            let c = if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                '.'
+            };
+            print!("{}", c);
+        }
+
+        println!();
+    }
+}
+
 /// Parse all `.ipf` files in `dir` using a fixed number of worker threads.
 /// Returns Vec<(PathBuf, IPFRoot)>
 fn parse_all_ipf_files_limited_threads(
@@ -115,14 +148,11 @@ fn parse_game_folders_multithread_limited(
     Ok(all_parsed)
 }
 
-/// Extract file at `file_index` from IPF archive identified by `ipf_filename`
-/// in the parsed IPF list, returning extracted data if found.
 fn extract_file_from_ipf(
     parsed_ipfs: &mut [(PathBuf, crate::ipf::IPFRoot)],
     ipf_filename: &str,
     file_index: usize,
-) -> io::Result<Option<Vec<u8>>> {
-    // Find IPF archive by filename (just file name, not full path)
+) -> io::Result<Option<(crate::ipf::IPFFileTable, Vec<u8>)>> {
     if let Some((path, ipf)) = parsed_ipfs.iter_mut().find(|(p, _)| {
         p.file_name()
             .and_then(|osstr| osstr.to_str())
@@ -131,9 +161,10 @@ fn extract_file_from_ipf(
         println!("Found IPF archive: {:?}", path);
 
         if ipf.file_table.len() > file_index {
+            let file_entry = ipf.file_table[file_index].clone(); // clone here
             if let Some(result) = ipf.extract_file_if_available(file_index) {
                 let data = result?;
-                return Ok(Some(data));
+                return Ok(Some((file_entry, data)));
             } else {
                 println!("Extraction not available for this IPF archive (no internal reader).");
                 return Ok(None);
@@ -167,16 +198,17 @@ fn main() -> io::Result<()> {
     );
 
     // Example: extract file at index 7 from archive named "example.ipf"
-    let ipf_name = "xml_client.ipf";
-    let file_index = 2;
+    let ipf_name = "sound.ipf";
+    let file_index = 5;
 
     match extract_file_from_ipf(&mut parsed_ipfs, ipf_name, file_index)? {
-        Some(data) => {
+        Some((file_entry, data)) => {
+            println!("Extracted from archive '{}':", ipf_name);
+            println!("Directory in archive: {}", file_entry.directory_name);
+            println!("Filename in archive: {}", file_entry.container_name);
             println!("Extracted data length: {}", data.len());
-            println!(
-                "Extracted data (up to 1000 bytes): {}",
-                String::from_utf8_lossy(&data[..data.len().min(1000)])
-            );
+            println!("Hex view of extracted data (up to 100 bytes):");
+            print_hex_viewer(&data[..data.len().min(100)]);
         }
         None => {
             println!(

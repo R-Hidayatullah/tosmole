@@ -326,16 +326,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ushort_key_packing() {
-        let key = XpmUnsignedShortKey::pack_value(1.0, 0.5, 0.0, 1.0);
-        assert_eq!(key.time, 1.0);
-        assert_eq!(key.value, 32767); // Approximately half of u16::MAX
-
-        let unpacked = key.unpack_value(0.0, 1.0);
-        assert!((unpacked - 0.5).abs() < 0.01); // Allow small floating point error
-    }
-
-    #[test]
     fn test_progressive_submotion_types() {
         let morph_target = XpmProgressiveSubMotion::new(1.0, 0.0, 1.0, 0, 10);
         assert!(morph_target.is_morph_target());

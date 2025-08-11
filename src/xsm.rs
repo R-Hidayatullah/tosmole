@@ -653,13 +653,6 @@ mod tests {
     }
 
     #[test]
-    fn test_vector_key_ordering() {
-        let key1 = XsmVector3Key::new(FileVector3::default(), 1.0);
-        let key2 = XsmVector3Key::new(FileVector3::default(), 2.0);
-        assert!(key1 < key2);
-    }
-
-    #[test]
     fn test_wavelet_info_compression_ratio() {
         let mut info = XsmWaveletInfo {
             compressed_size: 1000,

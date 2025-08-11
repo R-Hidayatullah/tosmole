@@ -8,10 +8,5 @@ lto = true
 strip = true
 opt-level = 3
 
-[build-dependencies]
-cc = "1.2.15"
-
 [dependencies]
-byteorder = "1.5.0"
-flate2 = { version = "1.1.0", default-features = false, features = ["zlib"] }
-serde = { version = "1.0.219", features = ["derive"] }
+flate2 = { version = "1.1.2", default-features = false, features = ["zlib"] }

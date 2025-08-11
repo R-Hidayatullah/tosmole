@@ -115,11 +115,47 @@ fn parse_game_folders_multithread_limited(
     Ok(all_parsed)
 }
 
+/// Extract file at `file_index` from IPF archive identified by `ipf_filename`
+/// in the parsed IPF list, returning extracted data if found.
+fn extract_file_from_ipf(
+    parsed_ipfs: &mut [(PathBuf, crate::ipf::IPFRoot)],
+    ipf_filename: &str,
+    file_index: usize,
+) -> io::Result<Option<Vec<u8>>> {
+    // Find IPF archive by filename (just file name, not full path)
+    if let Some((path, ipf)) = parsed_ipfs.iter_mut().find(|(p, _)| {
+        p.file_name()
+            .and_then(|osstr| osstr.to_str())
+            .map_or(false, |name| name.eq_ignore_ascii_case(ipf_filename))
+    }) {
+        println!("Found IPF archive: {:?}", path);
+
+        if ipf.file_table.len() > file_index {
+            if let Some(result) = ipf.extract_file_if_available(file_index) {
+                let data = result?;
+                return Ok(Some(data));
+            } else {
+                println!("Extraction not available for this IPF archive (no internal reader).");
+                return Ok(None);
+            }
+        } else {
+            println!(
+                "File table has fewer than {} files in archive {}.",
+                file_index + 1,
+                ipf_filename
+            );
+            return Ok(None);
+        }
+    }
+
+    println!("IPF archive '{}' not found in parsed list.", ipf_filename);
+    Ok(None)
+}
+
 fn main() -> io::Result<()> {
     let game_root = Path::new(r"C:\Users\Ridwan Hidayatullah\Documents\TreeOfSaviorCN");
     let start = std::time::Instant::now();
 
-    // Use max 4 threads per folder
     let mut parsed_ipfs = parse_game_folders_multithread_limited(game_root, 4)?;
 
     let duration = start.elapsed();
@@ -130,32 +166,24 @@ fn main() -> io::Result<()> {
         duration,
     );
 
-    // Check if at least 10 archives parsed
-    if parsed_ipfs.len() > 9 {
-        let (ref path, ref mut ipf) = parsed_ipfs[9]; // index 9 = 10th archive
+    // Example: extract file at index 7 from archive named "example.ipf"
+    let ipf_name = "xml_client.ipf";
+    let file_index = 2;
 
-        println!("Extracting file at index 7 from archive: {:?}", path);
-
-        // Check if file table has index 7
-        if ipf.file_table.len() > 7 {
-            // Use extract_file_if_available for extraction
-            if let Some(result) = ipf.extract_file_if_available(7) {
-                let data = result?;
-                println!("Extracted data length: {}", data.len());
-
-                // Print as UTF-8 lossily truncated to 1000 chars
-                println!(
-                    "Extracted data (up to 1000 bytes): {}",
-                    String::from_utf8_lossy(&data[..data.len().min(1000)])
-                );
-            } else {
-                println!("Extraction not available for this IPF archive (no internal reader).");
-            }
-        } else {
-            println!("File table has fewer than 8 files.");
+    match extract_file_from_ipf(&mut parsed_ipfs, ipf_name, file_index)? {
+        Some(data) => {
+            println!("Extracted data length: {}", data.len());
+            println!(
+                "Extracted data (up to 1000 bytes): {}",
+                String::from_utf8_lossy(&data[..data.len().min(1000)])
+            );
         }
-    } else {
-        println!("Less than 10 IPF archives parsed, can't extract index 7 file.");
+        None => {
+            println!(
+                "Could not extract file {} from IPF archive '{}'.",
+                file_index, ipf_name
+            );
+        }
     }
 
     Ok(())

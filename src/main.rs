@@ -257,6 +257,7 @@ struct DuplicateEntry {
 fn parse_duplicates_xml(path: &Path) -> std::io::Result<Vec<DuplicateEntry>> {
     let file = File::open(path)?;
     let mut reader = Reader::from_reader(BufReader::new(file));
+    reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
     let mut entries = Vec::new();
@@ -265,20 +266,41 @@ fn parse_duplicates_xml(path: &Path) -> std::io::Result<Vec<DuplicateEntry>> {
 
     loop {
         match reader.read_event_into(&mut buf) {
+            // <source file="...">  (start of a source)
             Ok(Event::Start(ref e)) if e.name().as_ref() == b"source" => {
-                // New source, reset targets
                 current_targets.clear();
                 current_source = e
                     .attributes()
                     .flatten()
                     .find(|a| a.key.as_ref() == b"file")
-                    .map(|a| String::from_utf8_lossy(&a.value).to_string());
+                    .map(|a| String::from_utf8_lossy(&a.value).into_owned());
             }
-            Ok(Event::Start(ref e)) if e.name().as_ref() == b"target" => {
+
+            // <source file="..." />  (self-closing source — no targets)
+            Ok(Event::Empty(ref e)) if e.name().as_ref() == b"source" => {
                 if let Some(attr) = e.attributes().flatten().find(|a| a.key.as_ref() == b"file") {
-                    current_targets.push(String::from_utf8_lossy(&attr.value).to_string());
+                    entries.push(DuplicateEntry {
+                        source: String::from_utf8_lossy(&attr.value).into_owned(),
+                        targets: Vec::new(),
+                    });
                 }
             }
+
+            // <target file="..." />  (self-closing target)
+            Ok(Event::Empty(ref e)) if e.name().as_ref() == b"target" => {
+                if let Some(attr) = e.attributes().flatten().find(|a| a.key.as_ref() == b"file") {
+                    current_targets.push(String::from_utf8_lossy(&attr.value).into_owned());
+                }
+            }
+
+            // <target file="..."> ... </target>  (if targets were not self-closing)
+            Ok(Event::Start(ref e)) if e.name().as_ref() == b"target" => {
+                if let Some(attr) = e.attributes().flatten().find(|a| a.key.as_ref() == b"file") {
+                    current_targets.push(String::from_utf8_lossy(&attr.value).into_owned());
+                }
+            }
+
+            // </source> — commit the current source + collected targets
             Ok(Event::End(ref e)) if e.name().as_ref() == b"source" => {
                 if let Some(src) = current_source.take() {
                     entries.push(DuplicateEntry {
@@ -287,13 +309,15 @@ fn parse_duplicates_xml(path: &Path) -> std::io::Result<Vec<DuplicateEntry>> {
                     });
                 }
             }
+
             Ok(Event::Eof) => break,
+
             Err(e) => {
-                eprintln!("Error parsing {:?}: {}", path, e);
-                break;
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
             }
             _ => {}
         }
+
         buf.clear();
     }
 
@@ -345,10 +369,12 @@ fn main() -> io::Result<()> {
     let xsmtime_duplicates =
         parse_duplicates_xml(&game_root.join("release").join("xsmtime_duplicates.xml"))?;
 
-    println!("XAC duplicates: {:?}", xac_duplicates.len());
-    println!("XSM duplicates: {:?}", xsm_duplicates.len());
-    println!("DDS duplicates: {:?}", dds_duplicates.len());
-    println!("XPM duplicates: {:?}", xpm_duplicates.len());
-    println!("XSMTIME duplicates: {:?}", xsmtime_duplicates.len());
+    println!("XAC duplicates: {}", xac_duplicates.len());
+    println!("XSM duplicates: {}", xsm_duplicates.len());
+    println!("DDS duplicates: {}", dds_duplicates.len());
+    println!("XPM duplicates: {}", xpm_duplicates.len());
+    println!("XSMTIME duplicates: {}", xsmtime_duplicates.len());
+
+    println!("XAC data : {:?}", xac_duplicates.get(10).unwrap());
     Ok(())
 }

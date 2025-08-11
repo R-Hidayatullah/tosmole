@@ -10,3 +10,4 @@ opt-level = 3
 
 [dependencies]
 flate2 = { version = "1.1.2", default-features = false, features = ["zlib"] }
+quick-xml = "0.38.1"

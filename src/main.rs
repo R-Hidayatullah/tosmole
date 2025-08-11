@@ -8,6 +8,8 @@ use std::{
     time::Instant,
 };
 
+use quick_xml::{Reader, events::Event};
+
 use crate::ipf::IPFRoot;
 
 mod binary;
@@ -246,6 +248,58 @@ fn parse_language_data(lang_folder: &Path) -> io::Result<(Vec<Vec<String>>, Vec<
     parse_language_data_parallel(lang_folder)
 }
 
+#[derive(Debug)]
+struct DuplicateEntry {
+    source: String,
+    targets: Vec<String>,
+}
+
+fn parse_duplicates_xml(path: &Path) -> std::io::Result<Vec<DuplicateEntry>> {
+    let file = File::open(path)?;
+    let mut reader = Reader::from_reader(BufReader::new(file));
+
+    let mut buf = Vec::new();
+    let mut entries = Vec::new();
+    let mut current_source: Option<String> = None;
+    let mut current_targets: Vec<String> = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) if e.name().as_ref() == b"source" => {
+                // New source, reset targets
+                current_targets.clear();
+                current_source = e
+                    .attributes()
+                    .flatten()
+                    .find(|a| a.key.as_ref() == b"file")
+                    .map(|a| String::from_utf8_lossy(&a.value).to_string());
+            }
+            Ok(Event::Start(ref e)) if e.name().as_ref() == b"target" => {
+                if let Some(attr) = e.attributes().flatten().find(|a| a.key.as_ref() == b"file") {
+                    current_targets.push(String::from_utf8_lossy(&attr.value).to_string());
+                }
+            }
+            Ok(Event::End(ref e)) if e.name().as_ref() == b"source" => {
+                if let Some(src) = current_source.take() {
+                    entries.push(DuplicateEntry {
+                        source: src,
+                        targets: current_targets.clone(),
+                    });
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                eprintln!("Error parsing {:?}: {}", path, e);
+                break;
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(entries)
+}
+
 fn main() -> io::Result<()> {
     let game_root = Path::new(r"C:\Users\Ridwan Hidayatullah\Documents\TreeOfSaviorCN");
     let lang_folder = Path::new(
@@ -277,8 +331,24 @@ fn main() -> io::Result<()> {
         println!("ETC row: {:?}", row);
     }
     for row in item_data.iter().take(3) {
-        println!("ITEM row: {:?}", row);
+        println!("ITEM row: {:?}\n", row);
     }
+    // Load each duplicates file into its own variable
+    let xac_duplicates =
+        parse_duplicates_xml(&game_root.join("release").join("xac_duplicates.xml"))?;
+    let xsm_duplicates =
+        parse_duplicates_xml(&game_root.join("release").join("xsm_duplicates.xml"))?;
+    let dds_duplicates =
+        parse_duplicates_xml(&game_root.join("release").join("dds_duplicates.xml"))?;
+    let xpm_duplicates =
+        parse_duplicates_xml(&game_root.join("release").join("xpm_duplicates.xml"))?;
+    let xsmtime_duplicates =
+        parse_duplicates_xml(&game_root.join("release").join("xsmtime_duplicates.xml"))?;
 
+    println!("XAC duplicates: {:?}", xac_duplicates.len());
+    println!("XSM duplicates: {:?}", xsm_duplicates.len());
+    println!("DDS duplicates: {:?}", dds_duplicates.len());
+    println!("XPM duplicates: {:?}", xpm_duplicates.len());
+    println!("XSMTIME duplicates: {:?}", xsmtime_duplicates.len());
     Ok(())
 }

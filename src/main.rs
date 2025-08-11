@@ -120,7 +120,7 @@ fn main() -> io::Result<()> {
     let start = std::time::Instant::now();
 
     // Use max 4 threads per folder
-    let parsed_ipfs = parse_game_folders_multithread_limited(game_root, 4)?;
+    let mut parsed_ipfs = parse_game_folders_multithread_limited(game_root, 4)?;
 
     let duration = start.elapsed();
 
@@ -129,6 +129,34 @@ fn main() -> io::Result<()> {
         parsed_ipfs.len(),
         duration,
     );
+
+    // Check if at least 10 archives parsed
+    if parsed_ipfs.len() > 9 {
+        let (ref path, ref mut ipf) = parsed_ipfs[9]; // index 9 = 10th archive
+
+        println!("Extracting file at index 7 from archive: {:?}", path);
+
+        // Check if file table has index 7
+        if ipf.file_table.len() > 7 {
+            // Use extract_file_if_available for extraction
+            if let Some(result) = ipf.extract_file_if_available(7) {
+                let data = result?;
+                println!("Extracted data length: {}", data.len());
+
+                // Print as UTF-8 lossily truncated to 1000 chars
+                println!(
+                    "Extracted data (up to 1000 bytes): {}",
+                    String::from_utf8_lossy(&data[..data.len().min(1000)])
+                );
+            } else {
+                println!("Extraction not available for this IPF archive (no internal reader).");
+            }
+        } else {
+            println!("File table has fewer than 8 files.");
+        }
+    } else {
+        println!("Less than 10 IPF archives parsed, can't extract index 7 file.");
+    }
 
     Ok(())
 }

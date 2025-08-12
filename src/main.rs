@@ -1,6 +1,6 @@
 #![allow(unused_variables, unused_imports, dead_code)]
 use std::{
-    fs::{File, read_dir},
+    fs::{self, File, read_dir},
     io::{self, BufRead, BufReader, Cursor},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, mpsc},
@@ -14,8 +14,10 @@ use crate::{
     binary::{BinaryReader, Endian},
     ipf::{IPFRoot, extract_and_print_example, parse_game_ipfs},
     tsv::parse_language_data,
+    xac::XACRoot,
     xml::parse_duplicates_xml,
     xpm::XPMRoot,
+    xsm::XSMRoot,
 };
 
 mod binary;
@@ -28,16 +30,40 @@ mod xml;
 mod xpm;
 mod xsm;
 
+fn parse_all_tests() -> io::Result<()> {
+    for entry in fs::read_dir("tests")? {
+        let entry = entry?;
+        let path = entry.path();
+        println!("\nParsing file: {:?}", path);
+
+        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            let bytes = std::fs::read(&path)?;
+            let mut reader = BinaryReader::new(Cursor::new(bytes), Endian::Little);
+
+            match ext {
+                "xsm" => {
+                    let root = XSMRoot::read_from(&mut reader)?;
+                    println!("Parsed XSM: {:?}", root.header);
+                }
+                "xac" => {
+                    let root = XACRoot::read_from(&mut reader)?;
+                    println!("Parsed XAC: {:?}", root.header);
+                }
+                "xpm" => {
+                    let root = XPMRoot::read_from(&mut reader)?;
+                    println!("Parsed XPM: {:?}", root.header);
+                }
+
+                _ => {
+                    println!("Skipping file {:?}", path);
+                }
+            }
+        }
+    }
+    Ok(())
+}
 fn main() -> io::Result<()> {
-    let path = "tests/npc_lecifer_hair.xpm";
-
-    let bytes = std::fs::read(path)?;
-
-    let cursor = Cursor::new(bytes);
-    let mut reader = BinaryReader::new(cursor, Endian::Little);
-    let root = XPMRoot::read_from(&mut reader)?;
-    println!("Memory XPM: {:?}", root.header);
-    println!("XPM data : {:#?}", root);
+    parse_all_tests()?;
 
     // let game_root = Path::new(r"C:\Users\Ridwan Hidayatullah\Documents\TreeOfSaviorCN");
     // let lang_folder = Path::new(

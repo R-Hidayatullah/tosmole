@@ -23,6 +23,12 @@ impl<R: Read + Seek> BinaryReader<R> {
             default_endian: endian,
         }
     }
+    pub fn length(&mut self) -> io::Result<u64> {
+        let current_pos = self.inner.stream_position()?; // remember current pos
+        let end_pos = self.inner.seek(SeekFrom::End(0))?; // seek to end to get length
+        self.inner.seek(SeekFrom::Start(current_pos))?; // seek back to original pos
+        Ok(end_pos)
+    }
 
     pub fn read_exact<const N: usize>(&mut self) -> io::Result<[u8; N]> {
         let mut buf = [0u8; N];
@@ -101,6 +107,12 @@ impl<R: Read + Seek> BinaryReader<R> {
 
     pub fn position(&mut self) -> io::Result<u64> {
         self.inner.stream_position()
+    }
+
+    pub fn bytes_left(&mut self) -> io::Result<u64> {
+        let total_len = self.length()?;
+        let current_pos = self.position()?;
+        Ok(total_len.saturating_sub(current_pos))
     }
 }
 

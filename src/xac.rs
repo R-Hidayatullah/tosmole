@@ -4,7 +4,12 @@
 //! Actor files (.xac), which contain 3D model data including meshes, materials,
 //! skeletal hierarchies, skinning information, and morph targets.
 
-use crate::shared_formats::{FileColor, FileQuaternion, FileVector3, MultiplicationOrder};
+use std::io::{self, Read, Seek};
+
+use crate::{
+    binary::BinaryReader,
+    shared_formats::{FileChunk, FileColor, FileQuaternion, FileVector3, MultiplicationOrder},
+};
 
 /// Mesh type classification
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -242,7 +247,7 @@ pub enum LayerId {
 /// XAC file format header
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacHeader {
+pub struct XACHeader {
     /// File format identifier, must be b"XAC "
     pub fourcc: [u8; 4],
     /// High version number
@@ -255,7 +260,7 @@ pub struct XacHeader {
     pub mul_order: u8,
 }
 
-impl XacHeader {
+impl XACHeader {
     /// Standard XAC fourcc identifier
     pub const FOURCC: [u8; 4] = *b"XAC ";
 
@@ -279,12 +284,22 @@ impl XacHeader {
     pub fn version(&self) -> (u8, u8) {
         (self.hi_version, self.lo_version)
     }
+
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        Ok(Self {
+            fourcc: br.read_exact::<4>()?,
+            hi_version: br.read_u8()?,
+            lo_version: br.read_u8()?,
+            endian_type: br.read_u8()?,
+            mul_order: br.read_u8()?,
+        })
+    }
 }
 
 /// XAC file information (version 1)
 #[derive(Debug, Clone)]
 #[repr(C)]
-pub struct XacInfo {
+pub struct XACInfo {
     /// Repositioning mask for transformation components
     pub repositioning_mask: u32,
     /// Node index for repositioning
@@ -299,7 +314,7 @@ pub struct XacInfo {
 /// XAC file information (version 2)
 #[derive(Debug, Clone)]
 #[repr(C)]
-pub struct XacInfo2 {
+pub struct XACInfo2 {
     /// Repositioning mask for transformation components
     pub repositioning_mask: u32,
     /// Node index for repositioning
@@ -316,7 +331,7 @@ pub struct XacInfo2 {
 /// XAC file information (version 3)
 #[derive(Debug, Clone)]
 #[repr(C)]
-pub struct XacInfo3 {
+pub struct XACInfo3 {
     /// Trajectory node index
     pub trajectory_node_index: u32,
     /// Motion extraction node index
@@ -335,7 +350,7 @@ pub struct XacInfo3 {
 /// XAC file information (version 4)
 #[derive(Debug, Clone)]
 #[repr(C)]
-pub struct XacInfo4 {
+pub struct XACInfo4 {
     /// Number of level of details
     pub num_lods: u32,
     /// Trajectory node index
@@ -354,7 +369,7 @@ pub struct XacInfo4 {
 /// Node structure (version 1)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacNode {
+pub struct XACNode {
     /// Local rotation quaternion
     pub local_quat: FileQuaternion,
     /// Scale rotation quaternion
@@ -371,7 +386,7 @@ pub struct XacNode {
     pub parent_index: u32,
 }
 
-impl XacNode {
+impl XACNode {
     /// Root node indicator
     pub const ROOT_NODE_INDEX: u32 = 0xFFFFFFFF;
 
@@ -393,7 +408,7 @@ impl XacNode {
 /// Node structure (version 2) with flags
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacNode2 {
+pub struct XACNode2 {
     /// Local rotation quaternion
     pub local_quat: FileQuaternion,
     /// Scale rotation quaternion
@@ -416,7 +431,7 @@ pub struct XacNode2 {
 /// Node structure (version 3) with OBB
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacNode3 {
+pub struct XACNode3 {
     /// Local rotation quaternion
     pub local_quat: FileQuaternion,
     /// Scale rotation quaternion
@@ -441,7 +456,7 @@ pub struct XacNode3 {
 /// Node structure (version 4) with motion LODs
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacNode4 {
+pub struct XACNode4 {
     /// Local rotation quaternion
     pub local_quat: FileQuaternion,
     /// Scale rotation quaternion
@@ -469,7 +484,7 @@ pub struct XacNode4 {
     pub importance_factor: f32,
 }
 
-impl XacNode4 {
+impl XACNode4 {
     /// Checks if node is active in given motion LOD level
     pub fn is_active_in_motion_lod(&self, lod_level: u32) -> bool {
         if lod_level < 32 {
@@ -483,7 +498,7 @@ impl XacNode4 {
 /// Mesh LOD level
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacMeshLodLevel {
+pub struct XACMeshLodLevel {
     /// LOD level number
     pub lod_level: u32,
     /// Size of LOD data in bytes
@@ -494,14 +509,14 @@ pub struct XacMeshLodLevel {
 /// UV texture coordinate
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 #[repr(C)]
-pub struct XacUv {
+pub struct XACUv {
     /// U coordinate
     pub u: f32,
     /// V coordinate
     pub v: f32,
 }
 
-impl XacUv {
+impl XACUv {
     pub fn new(u: f32, v: f32) -> Self {
         Self { u, v }
     }
@@ -510,7 +525,7 @@ impl XacUv {
 /// Skinning information (version 1)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacSkinningInfo {
+pub struct XACSkinningInfo {
     /// Node index this skinning belongs to
     pub node_index: u32,
     /// Is this for a collision mesh?
@@ -521,7 +536,7 @@ pub struct XacSkinningInfo {
 /// Skinning information (version 2)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacSkinningInfo2 {
+pub struct XACSkinningInfo2 {
     /// Node index this skinning belongs to
     pub node_index: u32,
     /// Total number of influences across all vertices
@@ -534,7 +549,7 @@ pub struct XacSkinningInfo2 {
 /// Skinning information (version 3)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacSkinningInfo3 {
+pub struct XACSkinningInfo3 {
     /// Node index this skinning belongs to
     pub node_index: u32,
     /// Number of local bones to reserve space for
@@ -549,7 +564,7 @@ pub struct XacSkinningInfo3 {
 /// Skinning information (version 4) with LOD support
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacSkinningInfo4 {
+pub struct XACSkinningInfo4 {
     /// Node index this skinning belongs to
     pub node_index: u32,
     /// Level of detail
@@ -566,7 +581,7 @@ pub struct XacSkinningInfo4 {
 /// Skinning information table entry
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacSkinningInfoTableEntry {
+pub struct XACSkinningInfoTableEntry {
     /// Start index in the SkinInfluence array
     pub start_index: u32,
     /// Number of influences for this vertex
@@ -576,7 +591,7 @@ pub struct XacSkinningInfoTableEntry {
 /// Skinning influence data
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
-pub struct XacSkinInfluence {
+pub struct XACSkinInfluence {
     /// Influence weight
     pub weight: f32,
     /// Node number
@@ -584,7 +599,7 @@ pub struct XacSkinInfluence {
     padding: [u8; 2],
 }
 
-impl XacSkinInfluence {
+impl XACSkinInfluence {
     pub fn new(weight: f32, node_nr: u16) -> Self {
         Self {
             weight,
@@ -597,7 +612,7 @@ impl XacSkinInfluence {
 /// Standard material
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacStandardMaterial {
+pub struct XACStandardMaterial {
     /// Ambient color
     pub ambient: FileColor,
     /// Diffuse color
@@ -626,7 +641,7 @@ pub struct XacStandardMaterial {
 /// Standard material (version 2) with layers
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacStandardMaterial2 {
+pub struct XACStandardMaterial2 {
     /// Ambient color
     pub ambient: FileColor,
     /// Diffuse color
@@ -656,7 +671,7 @@ pub struct XacStandardMaterial2 {
 /// Standard material (version 3) with LOD support
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacStandardMaterial3 {
+pub struct XACStandardMaterial3 {
     /// Level of detail
     pub lod: u32,
     /// Ambient color
@@ -688,7 +703,7 @@ pub struct XacStandardMaterial3 {
 /// Material layer (version 1)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacStandardMaterialLayer {
+pub struct XACStandardMaterialLayer {
     /// Layer amount (0.0 to 1.0)
     pub amount: f32,
     /// Horizontal texture offset
@@ -711,7 +726,7 @@ pub struct XacStandardMaterialLayer {
 /// Material layer (version 2) with blend mode
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacStandardMaterialLayer2 {
+pub struct XACStandardMaterialLayer2 {
     /// Layer amount (0.0 to 1.0)
     pub amount: f32,
     /// Horizontal texture offset
@@ -735,7 +750,7 @@ pub struct XacStandardMaterialLayer2 {
 /// Vertex attribute layer
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacVertexAttributeLayer {
+pub struct XACVertexAttributeLayer {
     /// Type of vertex attribute
     pub layer_type_id: u32,
     /// Size of single vertex attribute in bytes
@@ -750,7 +765,7 @@ pub struct XacVertexAttributeLayer {
 /// Sub-mesh definition
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacSubMesh {
+pub struct XACSubMesh {
     /// Number of indices
     pub num_indices: u32,
     /// Number of vertices
@@ -764,7 +779,7 @@ pub struct XacSubMesh {
 /// Mesh structure (version 1)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacMesh {
+pub struct XACMesh {
     /// Node index this mesh belongs to
     pub node_index: u32,
     /// Number of original vertices
@@ -785,7 +800,7 @@ pub struct XacMesh {
 /// Mesh structure (version 2) with LOD support
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacMesh2 {
+pub struct XACMesh2 {
     /// Node index this mesh belongs to
     pub node_index: u32,
     /// Level of detail
@@ -808,7 +823,7 @@ pub struct XacMesh2 {
 /// Node transformation limits
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacLimit {
+pub struct XACLimit {
     /// Minimum translation values
     pub translation_min: FileVector3,
     /// Maximum translation values
@@ -831,7 +846,7 @@ pub struct XacLimit {
 /// Progressive morph target
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacPMorphTarget {
+pub struct XACPMorphTarget {
     /// Slider minimum value
     pub range_min: f32,
     /// Slider maximum value
@@ -849,7 +864,7 @@ pub struct XacPMorphTarget {
 /// Progressive morph targets container
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacPMorphTargets {
+pub struct XACPMorphTargets {
     /// Number of morph targets
     pub num_morph_targets: u32,
     /// LOD level for these morph targets
@@ -859,7 +874,7 @@ pub struct XacPMorphTargets {
 /// Morph target mesh deltas
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacPMorphTargetMeshDeltas {
+pub struct XACPMorphTargetMeshDeltas {
     /// Node index
     pub node_index: u32,
     /// Minimum range value for compressed position vectors
@@ -878,7 +893,7 @@ pub struct XacPMorphTargetMeshDeltas {
 /// Progressive morph target transformation
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacPMorphTargetTransform {
+pub struct XACPMorphTargetTransform {
     /// Node index where the transform belongs
     pub node_index: u32,
     /// Node rotation
@@ -894,7 +909,7 @@ pub struct XacPMorphTargetTransform {
 /// FX material (version 1)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacFxMaterial {
+pub struct XACFxMaterial {
     /// Number of integer parameters
     pub num_int_params: u32,
     /// Number of float parameters
@@ -906,16 +921,16 @@ pub struct XacFxMaterial {
     // Note: In the actual file format, this is followed by:
     // - String: name
     // - String: effect file (path excluded, extension included)
-    // - XacFxIntParameter[num_int_params]
-    // - XacFxFloatParameter[num_float_params]
-    // - XacFxColorParameter[num_color_params]
+    // - XACFxIntParameter[num_int_params]
+    // - XACFxFloatParameter[num_float_params]
+    // - XACFxColorParameter[num_color_params]
     // - [num_bitmap_params] bitmap parameter entries
 }
 
 /// FX material (version 2) with additional parameter types
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacFxMaterial2 {
+pub struct XACFxMaterial2 {
     /// Number of integer parameters
     pub num_int_params: u32,
     /// Number of float parameters
@@ -934,7 +949,7 @@ pub struct XacFxMaterial2 {
 /// FX material (version 3) with LOD support
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacFxMaterial3 {
+pub struct XACFxMaterial3 {
     /// Level of detail
     pub lod: u32,
     /// Number of integer parameters
@@ -954,7 +969,7 @@ pub struct XacFxMaterial3 {
 /// FX material integer parameter
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacFxIntParameter {
+pub struct XACFxIntParameter {
     /// Parameter value (can be negative)
     pub value: i32,
     // Note: Followed by string name
@@ -963,7 +978,7 @@ pub struct XacFxIntParameter {
 /// FX material float parameter
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacFxFloatParameter {
+pub struct XACFxFloatParameter {
     /// Parameter value
     pub value: f32,
     // Note: Followed by string name
@@ -972,7 +987,7 @@ pub struct XacFxFloatParameter {
 /// FX material color parameter
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacFxColorParameter {
+pub struct XACFxColorParameter {
     /// Color value
     pub value: FileColor,
     // Note: Followed by string name
@@ -981,7 +996,7 @@ pub struct XacFxColorParameter {
 /// FX material Vector3 parameter
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacFxVector3Parameter {
+pub struct XACFxVector3Parameter {
     /// Vector3 value
     pub value: FileVector3,
     // Note: Followed by string name
@@ -990,7 +1005,7 @@ pub struct XacFxVector3Parameter {
 /// FX material boolean parameter
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacFxBoolParameter {
+pub struct XACFxBoolParameter {
     /// Boolean value (0 = false, 1 = true)
     pub value: bool,
     // Note: Followed by string name
@@ -999,7 +1014,7 @@ pub struct XacFxBoolParameter {
 /// Node group
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacNodeGroup {
+pub struct XACNodeGroup {
     /// Number of nodes in this group
     pub num_nodes: u16,
     /// Disabled by default? (0 = no, 1 = yes)
@@ -1013,18 +1028,18 @@ pub struct XacNodeGroup {
 /// Collection of all nodes
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacNodes {
+pub struct XACNodes {
     /// Total number of nodes
     pub num_nodes: u32,
     /// Number of root nodes
     pub num_root_nodes: u32,
-    // Note: Followed by XacNode4[num_nodes]
+    // Note: Followed by XACNode4[num_nodes]
 }
 
 /// Material statistics (version 1)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacMaterialInfo {
+pub struct XACMaterialInfo {
     /// Total number of materials
     pub num_total_materials: u32,
     /// Number of standard materials
@@ -1036,7 +1051,7 @@ pub struct XacMaterialInfo {
 /// Material statistics (version 2) with LOD support
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacMaterialInfo2 {
+pub struct XACMaterialInfo2 {
     /// Level of detail
     pub lod: u32,
     /// Total number of materials
@@ -1050,7 +1065,7 @@ pub struct XacMaterialInfo2 {
 /// Node motion sources for motion mirroring
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacNodeMotionSources {
+pub struct XACNodeMotionSources {
     /// Number of nodes
     pub num_nodes: u32,
     // Note: Followed by u16[num_nodes] - indices of nodes to extract motion data from
@@ -1059,7 +1074,7 @@ pub struct XacNodeMotionSources {
 /// Attachment nodes list
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XacAttachmentNodes {
+pub struct XACAttachmentNodes {
     /// Number of attachment nodes
     pub num_nodes: u32,
     // Note: Followed by u16[num_nodes] - attachment node indices
@@ -1098,7 +1113,7 @@ pub mod utils {
     use super::*;
 
     /// Validates an XAC header
-    pub fn validate_header(header: &XacHeader) -> Result<(), &'static str> {
+    pub fn validate_header(header: &XACHeader) -> Result<(), &'static str> {
         if !header.is_valid_fourcc() {
             return Err("Invalid XAC fourcc identifier");
         }
@@ -1107,17 +1122,17 @@ pub mod utils {
 
     /// Calculates total size needed for skinning influences
     pub fn calculate_skinning_data_size(num_influences: u32, num_vertices: u32) -> usize {
-        (num_influences as usize * std::mem::size_of::<XacSkinInfluence>())
-            + (num_vertices as usize * std::mem::size_of::<XacSkinningInfoTableEntry>())
+        (num_influences as usize * std::mem::size_of::<XACSkinInfluence>())
+            + (num_vertices as usize * std::mem::size_of::<XACSkinningInfoTableEntry>())
     }
 
     /// Checks if a node is a valid parent for another node
     pub fn is_valid_parent_relationship(parent_index: u32, child_index: u32) -> bool {
-        parent_index != child_index && parent_index != XacNode::ROOT_NODE_INDEX
+        parent_index != child_index && parent_index != XACNode::ROOT_NODE_INDEX
     }
 
     /// Calculates the total number of parameters in an FX material
-    pub fn total_fx_params(material: &XacFxMaterial2) -> u32 {
+    pub fn total_fx_params(material: &XACFxMaterial2) -> u32 {
         material.num_int_params
             + material.num_float_params
             + material.num_color_params
@@ -1128,46 +1143,78 @@ pub mod utils {
 }
 
 // Type aliases for convenience and backward compatibility
-pub type Header = XacHeader;
-pub type Info = XacInfo;
-pub type Info2 = XacInfo2;
-pub type Info3 = XacInfo3;
-pub type Info4 = XacInfo4;
-pub type Node = XacNode;
-pub type Node2 = XacNode2;
-pub type Node3 = XacNode3;
-pub type Node4 = XacNode4;
-pub type MeshLodLevel = XacMeshLodLevel;
-pub type Uv = XacUv;
-pub type SkinningInfo = XacSkinningInfo;
-pub type SkinningInfo2 = XacSkinningInfo2;
-pub type SkinningInfo3 = XacSkinningInfo3;
-pub type SkinningInfo4 = XacSkinningInfo4;
-pub type SkinningInfoTableEntry = XacSkinningInfoTableEntry;
-pub type SkinInfluence = XacSkinInfluence;
-pub type StandardMaterial = XacStandardMaterial;
-pub type StandardMaterial2 = XacStandardMaterial2;
-pub type StandardMaterial3 = XacStandardMaterial3;
-pub type StandardMaterialLayer = XacStandardMaterialLayer;
-pub type StandardMaterialLayer2 = XacStandardMaterialLayer2;
-pub type VertexAttributeLayer = XacVertexAttributeLayer;
-pub type SubMesh = XacSubMesh;
-pub type Mesh = XacMesh;
-pub type Mesh2 = XacMesh2;
-pub type Limit = XacLimit;
-pub type PMorphTarget = XacPMorphTarget;
-pub type PMorphTargets = XacPMorphTargets;
-pub type PMorphTargetMeshDeltas = XacPMorphTargetMeshDeltas;
-pub type PMorphTargetTransform = XacPMorphTargetTransform;
-pub type FxMaterial = XacFxMaterial;
-pub type FxMaterial2 = XacFxMaterial2;
-pub type FxMaterial3 = XacFxMaterial3;
-pub type NodeGroup = XacNodeGroup;
-pub type Nodes = XacNodes;
-pub type MaterialInfo = XacMaterialInfo;
-pub type MaterialInfo2 = XacMaterialInfo2;
-pub type NodeMotionSources = XacNodeMotionSources;
-pub type AttachmentNodes = XacAttachmentNodes;
+pub type Header = XACHeader;
+pub type Info = XACInfo;
+pub type Info2 = XACInfo2;
+pub type Info3 = XACInfo3;
+pub type Info4 = XACInfo4;
+pub type Node = XACNode;
+pub type Node2 = XACNode2;
+pub type Node3 = XACNode3;
+pub type Node4 = XACNode4;
+pub type MeshLodLevel = XACMeshLodLevel;
+pub type Uv = XACUv;
+pub type SkinningInfo = XACSkinningInfo;
+pub type SkinningInfo2 = XACSkinningInfo2;
+pub type SkinningInfo3 = XACSkinningInfo3;
+pub type SkinningInfo4 = XACSkinningInfo4;
+pub type SkinningInfoTableEntry = XACSkinningInfoTableEntry;
+pub type SkinInfluence = XACSkinInfluence;
+pub type StandardMaterial = XACStandardMaterial;
+pub type StandardMaterial2 = XACStandardMaterial2;
+pub type StandardMaterial3 = XACStandardMaterial3;
+pub type StandardMaterialLayer = XACStandardMaterialLayer;
+pub type StandardMaterialLayer2 = XACStandardMaterialLayer2;
+pub type VertexAttributeLayer = XACVertexAttributeLayer;
+pub type SubMesh = XACSubMesh;
+pub type Mesh = XACMesh;
+pub type Mesh2 = XACMesh2;
+pub type Limit = XACLimit;
+pub type PMorphTarget = XACPMorphTarget;
+pub type PMorphTargets = XACPMorphTargets;
+pub type PMorphTargetMeshDeltas = XACPMorphTargetMeshDeltas;
+pub type PMorphTargetTransform = XACPMorphTargetTransform;
+pub type FxMaterial = XACFxMaterial;
+pub type FxMaterial2 = XACFxMaterial2;
+pub type FxMaterial3 = XACFxMaterial3;
+pub type NodeGroup = XACNodeGroup;
+pub type Nodes = XACNodes;
+pub type MaterialInfo = XACMaterialInfo;
+pub type MaterialInfo2 = XACMaterialInfo2;
+pub type NodeMotionSources = XACNodeMotionSources;
+pub type AttachmentNodes = XACAttachmentNodes;
+
+#[derive(Debug)]
+pub enum XACChunk {
+    Unknown(FileChunk, Vec<u8>), // raw data
+}
+
+#[derive(Debug)]
+pub struct XACRoot {
+    pub header: XACHeader,
+    pub xac_data: Vec<XACChunk>, // store parsed chunks here
+}
+
+impl XACRoot {
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        let header = XACHeader::read_from(br)?;
+        let mut xac_data = Vec::new();
+
+        while let Ok(chunk_header) = FileChunk::read_from(br) {
+            // Parse chunk payload
+            let chunk = match (chunk_header.chunk_id, chunk_header.version) {
+                _ => XACChunk::Unknown(
+                    chunk_header,
+                    br.read_vec(chunk_header.size_in_bytes as usize)?,
+                ),
+            };
+
+            xac_data.push(chunk);
+        }
+
+        Ok(Self { header, xac_data })
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1175,7 +1222,7 @@ mod tests {
 
     #[test]
     fn test_header_creation() {
-        let header = XacHeader::new(2, 34);
+        let header = XACHeader::new(2, 34);
         assert_eq!(header.fourcc, *b"XAC ");
         assert_eq!(header.version(), (2, 34));
         assert!(header.is_valid_fourcc());
@@ -1183,13 +1230,13 @@ mod tests {
 
     #[test]
     fn test_node_root_detection() {
-        let root_node = XacNode {
-            parent_index: XacNode::ROOT_NODE_INDEX,
+        let root_node = XACNode {
+            parent_index: XACNode::ROOT_NODE_INDEX,
             ..unsafe { std::mem::zeroed() }
         };
         assert!(root_node.is_root());
 
-        let child_node = XacNode {
+        let child_node = XACNode {
             parent_index: 0,
             ..unsafe { std::mem::zeroed() }
         };
@@ -1198,7 +1245,7 @@ mod tests {
 
     #[test]
     fn test_node_lod_checking() {
-        let node = XacNode {
+        let node = XACNode {
             skeletal_lods: 0b1010, // Active in LODs 1 and 3
             ..unsafe { std::mem::zeroed() }
         };
@@ -1243,21 +1290,21 @@ mod tests {
 
     #[test]
     fn test_skin_influence_creation() {
-        let influence = XacSkinInfluence::new(0.75, 5);
+        let influence = XACSkinInfluence::new(0.75, 5);
         assert_eq!(influence.weight, 0.75);
         assert_eq!(influence.node_nr, 5);
     }
 
     #[test]
     fn test_uv_coordinates() {
-        let uv = XacUv::new(0.5, 0.8);
+        let uv = XACUv::new(0.5, 0.8);
         assert_eq!(uv.u, 0.5);
         assert_eq!(uv.v, 0.8);
     }
 
     #[test]
     fn test_node4_motion_lod() {
-        let node = XacNode4 {
+        let node = XACNode4 {
             motion_lods: 0b1100, // Active in motion LODs 2 and 3
             ..unsafe { std::mem::zeroed() }
         };
@@ -1293,18 +1340,18 @@ mod tests {
 
     #[test]
     fn test_utils_functions() {
-        let header = XacHeader::new(1, 0);
+        let header = XACHeader::new(1, 0);
         assert!(utils::validate_header(&header).is_ok());
 
         let data_size = utils::calculate_skinning_data_size(100, 50);
-        let expected_size = 100 * std::mem::size_of::<XacSkinInfluence>()
-            + 50 * std::mem::size_of::<XacSkinningInfoTableEntry>();
+        let expected_size = 100 * std::mem::size_of::<XACSkinInfluence>()
+            + 50 * std::mem::size_of::<XACSkinningInfoTableEntry>();
         assert_eq!(data_size, expected_size);
 
         assert!(utils::is_valid_parent_relationship(0, 1));
         assert!(!utils::is_valid_parent_relationship(1, 1)); // Self-parent
         assert!(!utils::is_valid_parent_relationship(
-            XacNode::ROOT_NODE_INDEX,
+            XACNode::ROOT_NODE_INDEX,
             1
         )); // Root as parent
     }

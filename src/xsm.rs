@@ -4,8 +4,13 @@
 //! Skeletal Motion files (.xsm), which contain bone animation data with
 //! support for both regular keyframe animation and wavelet-compressed motion data.
 
-use crate::shared_formats::{
-    File16BitQuaternion, FileQuaternion, FileVector3, MultiplicationOrder, chunk_ids,
+use std::io::{self, Read, Seek};
+
+use crate::{
+    binary::BinaryReader,
+    shared_formats::{
+        File16BitQuaternion, FileChunk, FileQuaternion, FileVector3, MultiplicationOrder, chunk_ids,
+    },
 };
 
 /// XSM-specific chunk identifiers
@@ -69,7 +74,7 @@ impl TryFrom<u8> for CompressorType {
 /// XSM file format header
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmHeader {
+pub struct XSMHeader {
     /// File format identifier, must be b"XSM "
     pub fourcc: [u8; 4],
     /// High version number (e.g., 2 in version 2.34)
@@ -82,7 +87,7 @@ pub struct XsmHeader {
     pub mul_order: u8,
 }
 
-impl XsmHeader {
+impl XSMHeader {
     /// Standard XSM fourcc identifier
     pub const FOURCC: [u8; 4] = *b"XSM ";
 
@@ -111,12 +116,22 @@ impl XsmHeader {
     pub fn is_little_endian(&self) -> bool {
         self.endian_type == 0
     }
+
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        Ok(Self {
+            fourcc: br.read_exact::<4>()?,
+            hi_version: br.read_u8()?,
+            lo_version: br.read_u8()?,
+            endian_type: br.read_u8()?,
+            mul_order: br.read_u8()?,
+        })
+    }
 }
 
 /// XSM file information chunk (version 1)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmInfo {
+pub struct XSMInfo {
     /// Motion frame rate in frames per second
     pub motion_fps: u32,
     /// Exporter high version number
@@ -131,7 +146,7 @@ pub struct XsmInfo {
     // - String: the name of the motion
 }
 
-impl XsmInfo {
+impl XSMInfo {
     /// Creates a new XSM info structure
     pub fn new(motion_fps: u32, exporter_high_version: u8, exporter_low_version: u8) -> Self {
         Self {
@@ -146,7 +161,7 @@ impl XsmInfo {
 /// XSM file information chunk (version 2)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmInfo2 {
+pub struct XSMInfo2 {
     /// Motion importance factor for automatic motion LOD
     pub importance_factor: f32,
     /// Maximum acceptable error for LOD system
@@ -158,10 +173,10 @@ pub struct XsmInfo2 {
     /// Exporter low version number
     pub exporter_low_version: u8,
     padding: [u8; 2],
-    // Note: Followed by the same strings as XsmInfo
+    // Note: Followed by the same strings as XSMInfo
 }
 
-impl XsmInfo2 {
+impl XSMInfo2 {
     /// Creates a new XSM info structure (version 2)
     pub fn new(
         importance_factor: f32,
@@ -184,7 +199,7 @@ impl XsmInfo2 {
 /// XSM file information chunk (version 3) with motion extraction mask
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmInfo3 {
+pub struct XSMInfo3 {
     /// Motion importance factor for automatic motion LOD
     pub importance_factor: f32,
     /// Maximum acceptable error for LOD system
@@ -198,10 +213,10 @@ pub struct XsmInfo3 {
     /// Exporter low version number
     pub exporter_low_version: u8,
     padding: [u8; 2],
-    // Note: Followed by the same strings as XsmInfo
+    // Note: Followed by the same strings as XSMInfo
 }
 
-impl XsmInfo3 {
+impl XSMInfo3 {
     /// Creates a new XSM info structure (version 3)
     pub fn new(
         importance_factor: f32,
@@ -226,7 +241,7 @@ impl XsmInfo3 {
 /// Skeletal sub-motion data (version 1)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmSkeletalSubMotion {
+pub struct XSMSkeletalSubMotion {
     /// Initial pose rotation
     pub pose_rot: FileQuaternion,
     /// Bind pose rotation
@@ -253,16 +268,16 @@ pub struct XsmSkeletalSubMotion {
     pub num_scale_rot_keys: u32,
     // Note: In the actual file format, this is followed by:
     // - String: motion part name
-    // - XsmVector3Key[num_pos_keys]
-    // - XsmQuaternionKey[num_rot_keys]
-    // - XsmVector3Key[num_scale_keys]
-    // - XsmQuaternionKey[num_scale_rot_keys]
+    // - XSMVector3Key[num_pos_keys]
+    // - XSMQuaternionKey[num_rot_keys]
+    // - XSMVector3Key[num_scale_keys]
+    // - XSMQuaternionKey[num_scale_rot_keys]
 }
 
 /// Skeletal sub-motion data (version 2) with max error
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmSkeletalSubMotion2 {
+pub struct XSMSkeletalSubMotion2 {
     /// Initial pose rotation
     pub pose_rot: FileQuaternion,
     /// Bind pose rotation
@@ -295,7 +310,7 @@ pub struct XsmSkeletalSubMotion2 {
 /// Skeletal sub-motion data (version 3) with compressed quaternions
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmSkeletalSubMotion3 {
+pub struct XSMSkeletalSubMotion3 {
     /// Initial pose rotation (compressed)
     pub pose_rot: File16BitQuaternion,
     /// Bind pose rotation (compressed)
@@ -324,23 +339,23 @@ pub struct XsmSkeletalSubMotion3 {
     pub max_error: f32,
     // Note: In the actual file format, this is followed by:
     // - String: motion part name
-    // - XsmVector3Key[num_pos_keys]
-    // - Xsm16BitQuaternionKey[num_rot_keys]
-    // - XsmVector3Key[num_scale_keys]
-    // - Xsm16BitQuaternionKey[num_scale_rot_keys]
+    // - XSMVector3Key[num_pos_keys]
+    // - XSM16BitQuaternionKey[num_rot_keys]
+    // - XSMVector3Key[num_scale_keys]
+    // - XSM16BitQuaternionKey[num_scale_rot_keys]
 }
 
 /// 3D vector keyframe
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmVector3Key {
+pub struct XSMVector3Key {
     /// The vector value
     pub value: FileVector3,
     /// Time in seconds
     pub time: f32,
 }
 
-impl XsmVector3Key {
+impl XSMVector3Key {
     /// Creates a new vector keyframe
     pub fn new(value: FileVector3, time: f32) -> Self {
         Self { value, time }
@@ -350,14 +365,14 @@ impl XsmVector3Key {
 /// Quaternion keyframe
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmQuaternionKey {
+pub struct XSMQuaternionKey {
     /// The quaternion value
     pub value: FileQuaternion,
     /// Time in seconds
     pub time: f32,
 }
 
-impl XsmQuaternionKey {
+impl XSMQuaternionKey {
     /// Creates a new quaternion keyframe
     pub fn new(value: FileQuaternion, time: f32) -> Self {
         Self { value, time }
@@ -367,14 +382,14 @@ impl XsmQuaternionKey {
 /// 16-bit compressed quaternion keyframe
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct Xsm16BitQuaternionKey {
+pub struct XSM16BitQuaternionKey {
     /// The compressed quaternion value
     pub value: File16BitQuaternion,
     /// Time in seconds
     pub time: f32,
 }
 
-impl Xsm16BitQuaternionKey {
+impl XSM16BitQuaternionKey {
     /// Creates a new compressed quaternion keyframe
     pub fn new(value: File16BitQuaternion, time: f32) -> Self {
         Self { value, time }
@@ -384,27 +399,27 @@ impl Xsm16BitQuaternionKey {
 /// Regular sub-motions container (version 1)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmSubMotions {
+pub struct XSMSubMotions {
     /// Number of skeletal motions
     pub num_sub_motions: u32,
     // Note: In the actual file format, this is followed by:
-    // - XsmSkeletalSubMotion2[num_sub_motions]
+    // - XSMSkeletalSubMotion2[num_sub_motions]
 }
 
 /// Regular sub-motions container (version 2)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmSubMotions2 {
+pub struct XSMSubMotions2 {
     /// Number of skeletal motions
     pub num_sub_motions: u32,
     // Note: In the actual file format, this is followed by:
-    // - XsmSkeletalSubMotion3[num_sub_motions]
+    // - XSMSkeletalSubMotion3[num_sub_motions]
 }
 
 /// Wavelet sub-motion mapping entry
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmWaveletMapping {
+pub struct XSMWaveletMapping {
     /// Position track index
     pub pos_index: u16,
     /// Rotation track index
@@ -415,7 +430,7 @@ pub struct XsmWaveletMapping {
     pub scale_index: u16,
 }
 
-impl XsmWaveletMapping {
+impl XSMWaveletMapping {
     /// Creates a new wavelet mapping
     pub fn new(pos_index: u16, rot_index: u16, scale_rot_index: u16, scale_index: u16) -> Self {
         Self {
@@ -430,7 +445,7 @@ impl XsmWaveletMapping {
 /// Wavelet skeletal sub-motions header
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmWaveletInfo {
+pub struct XSMWaveletInfo {
     /// Number of wavelet chunks
     pub num_chunks: u32,
     /// Samples per chunk
@@ -479,12 +494,12 @@ pub struct XsmWaveletInfo {
     pub compressor_id: u8,
     padding: [u8; 2],
     // Note: In the actual file format, this is followed by:
-    // - XsmWaveletMapping[num_sub_motions]
-    // - XsmWaveletSkeletalSubMotion[num_sub_motions]
-    // - XsmWaveletChunk[num_chunks]
+    // - XSMWaveletMapping[num_sub_motions]
+    // - XSMWaveletSkeletalSubMotion[num_sub_motions]
+    // - XSMWaveletChunk[num_chunks]
 }
 
-impl XsmWaveletInfo {
+impl XSMWaveletInfo {
     /// Gets the wavelet type
     pub fn wavelet_type(&self) -> Result<WaveletType, &'static str> {
         WaveletType::try_from(self.wavelet_id)
@@ -515,7 +530,7 @@ impl XsmWaveletInfo {
 /// Wavelet skeletal sub-motion data
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmWaveletSkeletalSubMotion {
+pub struct XSMWaveletSkeletalSubMotion {
     /// Initial pose rotation (compressed)
     pub pose_rot: File16BitQuaternion,
     /// Bind pose rotation (compressed)
@@ -541,7 +556,7 @@ pub struct XsmWaveletSkeletalSubMotion {
 /// Wavelet compressed chunk
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XsmWaveletChunk {
+pub struct XSMWaveletChunk {
     /// Rotation quantization scale
     pub rot_quant_scale: f32,
     /// Position quantization scale
@@ -568,7 +583,7 @@ pub struct XsmWaveletChunk {
     // - u8 compressed_scale_data[compressed_scale_num_bytes]
 }
 
-impl XsmWaveletChunk {
+impl XSMWaveletChunk {
     /// Calculates total compressed data size
     pub fn total_compressed_size(&self) -> u32 {
         self.compressed_rot_num_bytes
@@ -587,7 +602,7 @@ pub mod utils {
     use super::*;
 
     /// Validates an XSM header
-    pub fn validate_header(header: &XsmHeader) -> Result<(), &'static str> {
+    pub fn validate_header(header: &XSMHeader) -> Result<(), &'static str> {
         if !header.is_valid_fourcc() {
             return Err("Invalid XSM fourcc identifier");
         }
@@ -596,7 +611,7 @@ pub mod utils {
     }
 
     /// Calculates the total number of keyframes in a sub-motion
-    pub fn total_keyframes(submotion: &XsmSkeletalSubMotion) -> u32 {
+    pub fn total_keyframes(submotion: &XSMSkeletalSubMotion) -> u32 {
         submotion.num_pos_keys
             + submotion.num_rot_keys
             + submotion.num_scale_keys
@@ -605,21 +620,54 @@ pub mod utils {
 }
 
 // Type aliases for convenience
-pub type Header = XsmHeader;
-pub type Info = XsmInfo;
-pub type Info2 = XsmInfo2;
-pub type Info3 = XsmInfo3;
-pub type SkeletalSubMotion = XsmSkeletalSubMotion;
-pub type SkeletalSubMotion2 = XsmSkeletalSubMotion2;
-pub type SkeletalSubMotion3 = XsmSkeletalSubMotion3;
-pub type Vector3Key = XsmVector3Key;
-pub type QuaternionKey = XsmQuaternionKey;
-pub type SubMotions = XsmSubMotions;
-pub type SubMotions2 = XsmSubMotions2;
-pub type WaveletMapping = XsmWaveletMapping;
-pub type WaveletInfo = XsmWaveletInfo;
-pub type WaveletSkeletalSubMotion = XsmWaveletSkeletalSubMotion;
-pub type WaveletChunk = XsmWaveletChunk;
+pub type Header = XSMHeader;
+pub type Info = XSMInfo;
+pub type Info2 = XSMInfo2;
+pub type Info3 = XSMInfo3;
+pub type SkeletalSubMotion = XSMSkeletalSubMotion;
+pub type SkeletalSubMotion2 = XSMSkeletalSubMotion2;
+pub type SkeletalSubMotion3 = XSMSkeletalSubMotion3;
+pub type Vector3Key = XSMVector3Key;
+pub type QuaternionKey = XSMQuaternionKey;
+pub type SubMotions = XSMSubMotions;
+pub type SubMotions2 = XSMSubMotions2;
+pub type WaveletMapping = XSMWaveletMapping;
+pub type WaveletInfo = XSMWaveletInfo;
+pub type WaveletSkeletalSubMotion = XSMWaveletSkeletalSubMotion;
+pub type WaveletChunk = XSMWaveletChunk;
+
+#[derive(Debug)]
+pub enum XSMChunk {
+    Unknown(FileChunk, Vec<u8>), // raw data
+}
+
+#[derive(Debug)]
+pub struct XSMRoot {
+    pub header: XSMHeader,
+    pub xsm_data: Vec<XSMChunk>, // store parsed chunks here
+}
+
+impl XSMRoot {
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        let header = XSMHeader::read_from(br)?;
+        let mut xsm_data = Vec::new();
+
+        while let Ok(chunk_header) = FileChunk::read_from(br) {
+            println!("Size : {:?}", chunk_header);
+            let bytes_left = br.bytes_left()?;
+            let size_to_read =
+                std::cmp::min(chunk_header.size_in_bytes as u64, bytes_left) as usize;
+            // Parse chunk payload
+            let chunk = match (chunk_header.chunk_id, chunk_header.version) {
+                _ => XSMChunk::Unknown(chunk_header, br.read_vec(size_to_read)?),
+            };
+
+            xsm_data.push(chunk);
+        }
+
+        Ok(Self { header, xsm_data })
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -627,7 +675,7 @@ mod tests {
 
     #[test]
     fn test_header_creation() {
-        let header = XsmHeader::new(2, 34);
+        let header = XSMHeader::new(2, 34);
         assert_eq!(header.fourcc, *b"XSM ");
         assert_eq!(header.version(), (2, 34));
         assert!(header.is_valid_fourcc());
@@ -654,7 +702,7 @@ mod tests {
 
     #[test]
     fn test_wavelet_info_compression_ratio() {
-        let mut info = XsmWaveletInfo {
+        let mut info = XSMWaveletInfo {
             compressed_size: 1000,
             uncompressed_size: 5000,
             ..unsafe { std::mem::zeroed() }
@@ -667,7 +715,7 @@ mod tests {
 
     #[test]
     fn test_wavelet_chunk_sizes() {
-        let chunk = XsmWaveletChunk {
+        let chunk = XSMWaveletChunk {
             compressed_rot_num_bytes: 100,
             compressed_pos_num_bytes: 200,
             compressed_scale_num_bytes: 50,

@@ -88,7 +88,7 @@ impl XPMHeader {
 }
 
 /// XPM file information chunk
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct XPMInfo {
     /// Motion frame rate in frames per second
@@ -103,6 +103,10 @@ pub struct XPMInfo {
     // - String: original filename of the 3DSMAX/Maya file
     // - String: compilation date of the exporter
     // - String: the name of the motion
+    pub source_app: String,
+    pub original_filename: String,
+    pub compilation_date: String,
+    pub motion_name: String,
 }
 
 impl XPMInfo {
@@ -113,6 +117,10 @@ impl XPMInfo {
             exporter_high_version,
             exporter_low_version,
             padding: [0; 2],
+            source_app: String::new(),
+            original_filename: String::new(),
+            compilation_date: String::new(),
+            motion_name: String::new(),
         }
     }
 
@@ -120,10 +128,49 @@ impl XPMInfo {
     pub fn exporter_version(&self) -> (u8, u8) {
         (self.exporter_high_version, self.exporter_low_version)
     }
+
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>, size: u32) -> io::Result<Self> {
+        let start_pos = br.position()?;
+
+        let motion_fps = br.read_u32()?;
+        let exporter_high_version = br.read_u8()?;
+        let exporter_low_version = br.read_u8()?;
+        let padding = br.read_exact::<2>()?;
+        let motion_fps = br.read_u32()?;
+
+        let source_app = br.read_string_u32()?;
+        let original_filename = br.read_string_u32()?;
+        let compilation_date = br.read_string_u32()?;
+        let motion_name = br.read_string_u32()?;
+
+        let end_pos = br.position()?;
+        let parsed_bytes = (end_pos - start_pos) as u32;
+
+        if parsed_bytes != size {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "XPMInfo chunk size mismatch: expected {}, parsed {}",
+                    size, parsed_bytes
+                ),
+            ));
+        }
+
+        Ok(Self {
+            motion_fps,
+            exporter_high_version,
+            exporter_low_version,
+            padding,
+            source_app,
+            original_filename,
+            compilation_date,
+            motion_name,
+        })
+    }
 }
 
 /// Progressive morph sub-motion data
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct XPMProgressiveSubMotion {
     /// Pose weight to use when no animation data is present
@@ -139,6 +186,8 @@ pub struct XPMProgressiveSubMotion {
     // Note: In the actual file format, this is followed by:
     // - String: name (the name of this motion part)
     // - XPMUnsignedShortKey[num_keys]
+    pub name: String,
+    pub xpm_key: Vec<XPMUnsignedShortKey>,
 }
 
 impl XPMProgressiveSubMotion {
@@ -149,6 +198,8 @@ impl XPMProgressiveSubMotion {
         max_weight: f32,
         phoneme_set: u32,
         num_keys: u32,
+        name: String,
+        xpm_key: Vec<XPMUnsignedShortKey>,
     ) -> Self {
         Self {
             pose_weight,
@@ -156,6 +207,8 @@ impl XPMProgressiveSubMotion {
             max_weight,
             phoneme_set,
             num_keys,
+            name,
+            xpm_key,
         }
     }
 
@@ -172,6 +225,26 @@ impl XPMProgressiveSubMotion {
     /// Gets the weight range for this sub-motion
     pub fn weight_range(&self) -> (f32, f32) {
         (self.min_weight, self.max_weight)
+    }
+
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        let pose_weight = br.read_f32()?;
+        let min_weight = br.read_f32()?;
+        let max_weight = br.read_f32()?;
+        let phoneme_set = br.read_u32()?;
+        let num_keys = br.read_u32()?;
+        let name = br.read_string_u32()?;
+        let xpm_key = Vec::new();
+
+        Ok(Self {
+            pose_weight,
+            min_weight,
+            max_weight,
+            phoneme_set,
+            num_keys,
+            name,
+            xpm_key,
+        })
     }
 }
 
@@ -323,7 +396,7 @@ pub type Header = XPMHeader;
 #[derive(Debug)]
 pub enum XPMChunk {
     Unknown(FileChunk, Vec<u8>), // raw data
-                                 // Add more chunk variants as needed
+    Info(FileChunk, XPMInfo),
 }
 
 #[derive(Debug)]
@@ -338,14 +411,18 @@ impl XPMRoot {
         let mut xpm_data = Vec::new();
 
         while let Ok(chunk_header) = FileChunk::read_from(br) {
-            // Read raw chunk data
-            let data = br.read_vec(chunk_header.size_in_bytes as usize)?;
-
             // Deduce type from chunk_id + version
             let chunk = match (chunk_header.chunk_id, chunk_header.version) {
-                _ => XPMChunk::Unknown(chunk_header, data),
-            };
+                (xpm_chunk_ids::INFO, 1) => {
+                    let info = XPMInfo::read_from(br, chunk_header.size_in_bytes)?;
+                    XPMChunk::Info(chunk_header, info)
+                }
 
+                _ => XPMChunk::Unknown(
+                    chunk_header,
+                    br.read_vec(chunk_header.size_in_bytes as usize)?,
+                ),
+            };
             xpm_data.push(chunk);
         }
 
@@ -375,11 +452,13 @@ mod tests {
 
     #[test]
     fn test_progressive_submotion_types() {
-        let morph_target = XPMProgressiveSubMotion::new(1.0, 0.0, 1.0, 0, 10);
+        let morph_target =
+            XPMProgressiveSubMotion::new(1.0, 0.0, 1.0, 0, 10, "".to_string(), Vec::new());
         assert!(morph_target.is_morph_target());
         assert!(!morph_target.is_phoneme_motion());
 
-        let phoneme_motion = XPMProgressiveSubMotion::new(1.0, 0.0, 1.0, 1, 10);
+        let phoneme_motion =
+            XPMProgressiveSubMotion::new(1.0, 0.0, 1.0, 1, 10, "".to_string(), Vec::new());
         assert!(!phoneme_motion.is_morph_target());
         assert!(phoneme_motion.is_phoneme_motion());
     }

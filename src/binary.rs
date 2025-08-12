@@ -74,6 +74,21 @@ impl<R: Read + Seek> BinaryReader<R> {
         Ok(String::from_utf8_lossy(&buf).into_owned())
     }
 
+    pub fn read_string_u8(&mut self) -> io::Result<String> {
+        let len = self.read_u8()? as usize;
+        self.read_string(len)
+    }
+
+    pub fn read_string_u16(&mut self) -> io::Result<String> {
+        let len = self.read_u16()? as usize;
+        self.read_string(len)
+    }
+
+    pub fn read_string_u32(&mut self) -> io::Result<String> {
+        let len = self.read_u32()? as usize;
+        self.read_string(len)
+    }
+
     pub fn read_vec(&mut self, len: usize) -> io::Result<Vec<u8>> {
         let mut buf = vec![0u8; len];
         self.inner.read_exact(&mut buf)?;

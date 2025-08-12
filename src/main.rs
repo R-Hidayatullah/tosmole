@@ -34,7 +34,6 @@ fn parse_all_tests() -> io::Result<()> {
     for entry in fs::read_dir("tests")? {
         let entry = entry?;
         let path = entry.path();
-        println!("\nParsing file: {:?}", path);
 
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             let bytes = std::fs::read(&path)?;

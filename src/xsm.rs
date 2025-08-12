@@ -653,7 +653,6 @@ impl XSMRoot {
         let mut xsm_data = Vec::new();
 
         while let Ok(chunk_header) = FileChunk::read_from(br) {
-            println!("Size : {:?}", chunk_header);
             let bytes_left = br.bytes_left()?;
             let size_to_read =
                 std::cmp::min(chunk_header.size_in_bytes as u64, bytes_left) as usize;

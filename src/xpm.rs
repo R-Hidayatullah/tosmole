@@ -4,7 +4,12 @@
 //! Progressive Morph Motion files (.xpm), which contain facial animation
 //! and morph target data with phoneme sets for speech animation.
 
-use crate::shared_formats::{MultiplicationOrder, chunk_ids};
+use std::io::{self, Read, Seek};
+
+use crate::{
+    binary::BinaryReader,
+    shared_formats::{FileChunk, MultiplicationOrder, chunk_ids},
+};
 
 /// XPM-specific chunk identifiers
 pub mod xpm_chunk_ids {
@@ -19,7 +24,7 @@ pub mod xpm_chunk_ids {
 /// XPM file format header
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XpmHeader {
+pub struct XPMHeader {
     /// File format identifier, must be b"XPM "
     pub fourcc: [u8; 4],
     /// High version number (e.g., 2 in version 2.34)
@@ -32,7 +37,7 @@ pub struct XpmHeader {
     pub mul_order: u8,
 }
 
-impl XpmHeader {
+impl XPMHeader {
     /// Standard XPM fourcc identifier
     pub const FOURCC: [u8; 4] = *b"XPM ";
 
@@ -70,12 +75,22 @@ impl XpmHeader {
             _ => None,
         }
     }
+
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        Ok(Self {
+            fourcc: br.read_exact::<4>()?,
+            hi_version: br.read_u8()?,
+            lo_version: br.read_u8()?,
+            endian_type: br.read_u8()?,
+            mul_order: br.read_u8()?,
+        })
+    }
 }
 
 /// XPM file information chunk
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XpmInfo {
+pub struct XPMInfo {
     /// Motion frame rate in frames per second
     pub motion_fps: u32,
     /// Exporter high version number
@@ -90,7 +105,7 @@ pub struct XpmInfo {
     // - String: the name of the motion
 }
 
-impl XpmInfo {
+impl XPMInfo {
     /// Creates a new XPM info structure
     pub fn new(motion_fps: u32, exporter_high_version: u8, exporter_low_version: u8) -> Self {
         Self {
@@ -110,7 +125,7 @@ impl XpmInfo {
 /// Progressive morph sub-motion data
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XpmProgressiveSubMotion {
+pub struct XPMProgressiveSubMotion {
     /// Pose weight to use when no animation data is present
     pub pose_weight: f32,
     /// Minimum allowed weight value (used for unpacking keyframe weights)
@@ -123,10 +138,10 @@ pub struct XpmProgressiveSubMotion {
     pub num_keys: u32,
     // Note: In the actual file format, this is followed by:
     // - String: name (the name of this motion part)
-    // - XpmUnsignedShortKey[num_keys]
+    // - XPMUnsignedShortKey[num_keys]
 }
 
-impl XpmProgressiveSubMotion {
+impl XPMProgressiveSubMotion {
     /// Creates a new progressive sub-motion
     pub fn new(
         pose_weight: f32,
@@ -163,21 +178,21 @@ impl XpmProgressiveSubMotion {
 /// Floating-point keyframe data
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
-pub struct XpmFloatKey {
+pub struct XPMFloatKey {
     /// Time in seconds
     pub time: f32,
     /// Keyframe value
     pub value: f32,
 }
 
-impl XpmFloatKey {
+impl XPMFloatKey {
     /// Creates a new float key
     pub fn new(time: f32, value: f32) -> Self {
         Self { time, value }
     }
 }
 
-impl PartialOrd for XpmFloatKey {
+impl PartialOrd for XPMFloatKey {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.time.partial_cmp(&other.time)
     }
@@ -186,7 +201,7 @@ impl PartialOrd for XpmFloatKey {
 /// Compressed 16-bit unsigned integer keyframe data
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
-pub struct XpmUnsignedShortKey {
+pub struct XPMUnsignedShortKey {
     /// Time in seconds
     pub time: f32,
     /// Compressed keyframe value (16-bit unsigned integer)
@@ -194,7 +209,7 @@ pub struct XpmUnsignedShortKey {
     padding: [u8; 2],
 }
 
-impl XpmUnsignedShortKey {
+impl XPMUnsignedShortKey {
     /// Creates a new unsigned short key
     pub fn new(time: f32, value: u16) -> Self {
         Self {
@@ -222,7 +237,7 @@ impl XpmUnsignedShortKey {
     }
 }
 
-impl PartialOrd for XpmUnsignedShortKey {
+impl PartialOrd for XPMUnsignedShortKey {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.time.partial_cmp(&other.time)
     }
@@ -231,14 +246,14 @@ impl PartialOrd for XpmUnsignedShortKey {
 /// Container for multiple sub-motions
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct XpmSubMotions {
+pub struct XPMSubMotions {
     /// Number of sub-motions in this container
     pub num_sub_motions: u32,
     // Note: In the actual file format, this is followed by:
-    // - XpmProgressiveSubMotion[num_sub_motions]
+    // - XPMProgressiveSubMotion[num_sub_motions]
 }
 
-impl XpmSubMotions {
+impl XPMSubMotions {
     /// Creates a new sub-motions container
     pub fn new(num_sub_motions: u32) -> Self {
         Self { num_sub_motions }
@@ -274,7 +289,7 @@ pub mod utils {
     use super::*;
 
     /// Validates an XPM header
-    pub fn validate_header(header: &XpmHeader) -> Result<(), &'static str> {
+    pub fn validate_header(header: &XPMHeader) -> Result<(), &'static str> {
         if !header.is_valid_fourcc() {
             return Err("Invalid XPM fourcc identifier");
         }
@@ -288,22 +303,55 @@ pub mod utils {
 
     /// Calculates the unpacked size for a compressed key sequence
     pub fn calculate_unpacked_size(num_keys: u32) -> usize {
-        num_keys as usize * std::mem::size_of::<XpmFloatKey>()
+        num_keys as usize * std::mem::size_of::<XPMFloatKey>()
     }
 
     /// Calculates the packed size for a compressed key sequence
     pub fn calculate_packed_size(num_keys: u32) -> usize {
-        num_keys as usize * std::mem::size_of::<XpmUnsignedShortKey>()
+        num_keys as usize * std::mem::size_of::<XPMUnsignedShortKey>()
     }
 }
 
 // Type aliases for convenience
-pub type FloatKey = XpmFloatKey;
-pub type UShortKey = XpmUnsignedShortKey;
-pub type ProgressiveSubMotion = XpmProgressiveSubMotion;
-pub type SubMotions = XpmSubMotions;
-pub type Info = XpmInfo;
-pub type Header = XpmHeader;
+pub type FloatKey = XPMFloatKey;
+pub type UShortKey = XPMUnsignedShortKey;
+pub type ProgressiveSubMotion = XPMProgressiveSubMotion;
+pub type SubMotions = XPMSubMotions;
+pub type Info = XPMInfo;
+pub type Header = XPMHeader;
+
+#[derive(Debug)]
+pub enum XPMChunk {
+    Unknown(FileChunk, Vec<u8>), // raw data
+                                 // Add more chunk variants as needed
+}
+
+#[derive(Debug)]
+pub struct XPMRoot {
+    pub header: XPMHeader,
+    pub xpm_data: Vec<XPMChunk>, // store parsed chunks here
+}
+
+impl XPMRoot {
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        let header = XPMHeader::read_from(br)?;
+        let mut xpm_data = Vec::new();
+
+        while let Ok(chunk_header) = FileChunk::read_from(br) {
+            // Read raw chunk data
+            let data = br.read_vec(chunk_header.size_in_bytes as usize)?;
+
+            // Deduce type from chunk_id + version
+            let chunk = match (chunk_header.chunk_id, chunk_header.version) {
+                _ => XPMChunk::Unknown(chunk_header, data),
+            };
+
+            xpm_data.push(chunk);
+        }
+
+        Ok(Self { header, xpm_data })
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -311,7 +359,7 @@ mod tests {
 
     #[test]
     fn test_header_creation() {
-        let header = XpmHeader::new(2, 34);
+        let header = XPMHeader::new(2, 34);
         assert_eq!(header.fourcc, *b"XPM ");
         assert_eq!(header.version(), (2, 34));
         assert!(header.is_valid_fourcc());
@@ -320,25 +368,25 @@ mod tests {
 
     #[test]
     fn test_float_key_ordering() {
-        let key1 = XpmFloatKey::new(1.0, 0.5);
-        let key2 = XpmFloatKey::new(2.0, 0.8);
+        let key1 = XPMFloatKey::new(1.0, 0.5);
+        let key2 = XPMFloatKey::new(2.0, 0.8);
         assert!(key1 < key2);
     }
 
     #[test]
     fn test_progressive_submotion_types() {
-        let morph_target = XpmProgressiveSubMotion::new(1.0, 0.0, 1.0, 0, 10);
+        let morph_target = XPMProgressiveSubMotion::new(1.0, 0.0, 1.0, 0, 10);
         assert!(morph_target.is_morph_target());
         assert!(!morph_target.is_phoneme_motion());
 
-        let phoneme_motion = XpmProgressiveSubMotion::new(1.0, 0.0, 1.0, 1, 10);
+        let phoneme_motion = XPMProgressiveSubMotion::new(1.0, 0.0, 1.0, 1, 10);
         assert!(!phoneme_motion.is_morph_target());
         assert!(phoneme_motion.is_phoneme_motion());
     }
 
     #[test]
     fn test_header_validation() {
-        let valid_header = XpmHeader::new(2, 34);
+        let valid_header = XPMHeader::new(2, 34);
         assert!(utils::validate_header(&valid_header).is_ok());
 
         let mut invalid_header = valid_header;

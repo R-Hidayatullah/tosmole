@@ -4,7 +4,12 @@
 //! various animation file formats including skeletal motions, actors, and
 //! progressive morph motions.
 
-use std::fmt;
+use std::{
+    fmt,
+    io::{self, Read, Seek},
+};
+
+use crate::binary::BinaryReader;
 
 /// Type of skeletal motion data
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +63,16 @@ pub struct FileChunk {
     pub size_in_bytes: u32,
     /// The version of the chunk
     pub version: u32,
+}
+
+impl FileChunk {
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        Ok(Self {
+            chunk_id: br.read_u32()?,      // 4 bytes
+            size_in_bytes: br.read_u32()?, // 4 bytes
+            version: br.read_u32()?,       // 4 bytes
+        })
+    }
 }
 
 /// RGBA color with values in [0..1] range

@@ -37,7 +37,7 @@ fn main() -> io::Result<()> {
     let mut reader = BinaryReader::new(cursor, Endian::Little);
     let root = XPMRoot::read_from(&mut reader)?;
     println!("Memory XPM: {:?}", root.header);
-    println!("XPM data : {:?}", root);
+    println!("XPM data : {:#?}", root);
 
     // let game_root = Path::new(r"C:\Users\Ridwan Hidayatullah\Documents\TreeOfSaviorCN");
     // let lang_folder = Path::new(

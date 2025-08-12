@@ -4,10 +4,10 @@
 //! Progressive Morph Motion files (.xpm), which contain facial animation
 //! and morph target data with phoneme sets for speech animation.
 
-use std::io::{self, Read, Seek};
+use std::io::{self, Cursor, Read, Seek};
 
 use crate::{
-    binary::BinaryReader,
+    binary::{BinaryReader, Endian},
     shared_formats::{FileChunk, MultiplicationOrder, chunk_ids},
 };
 
@@ -136,7 +136,6 @@ impl XPMInfo {
         let exporter_high_version = br.read_u8()?;
         let exporter_low_version = br.read_u8()?;
         let padding = br.read_exact::<2>()?;
-        let motion_fps = br.read_u32()?;
 
         let source_app = br.read_string_u32()?;
         let original_filename = br.read_string_u32()?;
@@ -411,18 +410,18 @@ impl XPMRoot {
         let mut xpm_data = Vec::new();
 
         while let Ok(chunk_header) = FileChunk::read_from(br) {
-            // Deduce type from chunk_id + version
+            // Parse chunk payload
             let chunk = match (chunk_header.chunk_id, chunk_header.version) {
                 (xpm_chunk_ids::INFO, 1) => {
                     let info = XPMInfo::read_from(br, chunk_header.size_in_bytes)?;
                     XPMChunk::Info(chunk_header, info)
                 }
-
                 _ => XPMChunk::Unknown(
                     chunk_header,
                     br.read_vec(chunk_header.size_in_bytes as usize)?,
                 ),
             };
+
             xpm_data.push(chunk);
         }
 

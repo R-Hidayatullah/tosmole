@@ -94,25 +94,25 @@ fn main() -> io::Result<()> {
         println!("Data IPF : {:?}\n", i);
     }
 
-    let tree = build_versioned_tree(&parsed_ipfs);
+    let tree = build_versioned_tree(parsed_ipfs);
 
-    // Multi-level path you want to inspect
-    let path = vec!["forkparticle", "texture"];
+    // Empty path = root node itself
+    let path: Vec<&str> = vec!["helpimg"];
     let target_file = "";
 
     let nodes = tree.find_nodes_by_path(&path);
+
     if nodes.is_empty() {
         println!("Path {:?} not found", path);
     } else {
         for (i, node) in nodes.iter().enumerate() {
-            println!("=== Full subtree [{}] for {:?} ===", i, path);
-            node.print_full(0);
+            // println!("=== Full subtree [{}] for {:?} ===", i, path);
+            // node.print_full(0);
 
             println!("=== Shallow view [{}] for {:?} ===", i, path);
             node.print_shallow();
 
             if !target_file.is_empty() {
-                // Check if the target file exists in this node
                 if node.has_file(target_file) {
                     println!("✅ File '{}' exists in this folder.", target_file);
                 } else {

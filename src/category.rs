@@ -18,7 +18,7 @@ impl TreeNode {
         }
     }
 
-    pub fn insert_file(&mut self, file: &IPFFileTable) {
+    pub fn insert_file(&mut self, file: IPFFileTable) {
         let parts: Vec<&str> = file.directory_name.split('/').collect();
         if parts.is_empty() {
             return;
@@ -39,14 +39,14 @@ impl TreeNode {
                 .or_insert(TreeNode::new(part));
         }
 
-        // Last part is file
-        let file_name = parts[parts.len() - 1];
-        current.files.push(IPFFileTable {
-            directory_name: file_name.to_string(),
-            ..file.clone()
-        });
+        // Last part is file, move it directly
+        let file_name = parts[parts.len() - 1].to_string();
+        let mut moved_file = file;
+        moved_file.directory_name = file_name;
+        current.files.push(moved_file);
     }
 
+    /// Print the tree recursively (full)
     pub fn print_full(&self, indent: usize) {
         let pad = " ".repeat(indent * 2);
         println!("{}{}", pad, self.name);
@@ -60,6 +60,20 @@ impl TreeNode {
         }
     }
 
+    /// Print only immediate children of this node (shallow)
+    pub fn print_shallow_with_parent(&self, parent: Option<&str>) {
+        if let Some(p) = parent {
+            println!("Parent folder: {}", p);
+        }
+        println!("Folder: {}", self.name);
+        for child in self.children.values() {
+            println!("  [folder] {}", child.name);
+        }
+        for file in &self.files {
+            println!("  [file] {}", file.directory_name);
+        }
+    }
+
     pub fn print_shallow(&self) {
         println!("{}", self.name);
         for child in self.children.values() {
@@ -70,7 +84,7 @@ impl TreeNode {
         }
     }
 
-    /// Find **all matching nodes** for a multi-part path
+    /// Find all nodes matching a multi-part path
     pub fn find_nodes_by_path<'a>(&'a self, path_parts: &[&str]) -> Vec<&'a TreeNode> {
         if path_parts.is_empty() {
             return vec![self];
@@ -88,7 +102,7 @@ impl TreeNode {
         results
     }
 
-    /// Check if a file exists in this node (only immediate files, not deep)
+    /// Check if a file exists in this node (only immediate files)
     pub fn has_file(&self, file_name: &str) -> bool {
         self.files.iter().any(|f| f.directory_name == file_name)
     }
@@ -109,12 +123,13 @@ impl TreeNode {
     }
 }
 
-pub fn build_versioned_tree(ipfs: &[(PathBuf, IPFRoot)]) -> TreeNode {
+/// Build the tree from all parsed IPFs
+pub fn build_versioned_tree(ipfs: Vec<(PathBuf, IPFRoot)>) -> TreeNode {
     let mut root = TreeNode::new("root");
 
     for (_, ipf) in ipfs {
-        for file in &ipf.file_table {
-            root.insert_file(file);
+        for file in ipf.file_table {
+            root.insert_file(file); // moved here
         }
     }
 

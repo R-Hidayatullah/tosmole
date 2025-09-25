@@ -12,6 +12,8 @@ use quick_xml::{Reader, events::Event};
 
 use crate::{
     binary::{BinaryReader, Endian},
+    category::build_versioned_tree,
+    ies::IESRoot,
     ipf::{IPFRoot, extract_and_print_example, parse_game_ipfs},
     tsv::parse_language_data,
     xac::XACRoot,
@@ -21,6 +23,7 @@ use crate::{
 };
 
 mod binary;
+mod category;
 mod ies;
 mod ipf;
 mod shared_formats;
@@ -52,6 +55,15 @@ fn parse_all_tests() -> io::Result<()> {
                     let root = XPMRoot::read_from(&mut reader)?;
                     println!("Parsed XPM: {:?}", root.header);
                 }
+                "ies" => {
+                    let root = IESRoot::read_from(&mut reader)?;
+                    println!("Parsed IES: {:?}", root.header);
+                }
+
+                "ipf" => {
+                    let root = IPFRoot::open(path)?;
+                    println!("Parsed IPF: {:?}", root.header);
+                }
 
                 _ => {
                     println!("Skipping file {:?}", path);
@@ -61,24 +73,52 @@ fn parse_all_tests() -> io::Result<()> {
     }
     Ok(())
 }
+
 fn main() -> io::Result<()> {
-    parse_all_tests()?;
+    let game_root = Path::new(r"/home/ridwan/Documents/TreeOfSaviorCN/");
+    let lang_folder =
+        Path::new(r"/home/ridwan/Documents/TreeOfSaviorCN/release/languageData/English");
 
-    // let game_root = Path::new(r"C:\Users\Ridwan Hidayatullah\Documents\TreeOfSaviorCN");
-    // let lang_folder = Path::new(
-    //     r"C:\Users\Ridwan Hidayatullah\Documents\TreeOfSaviorCN\release\languageData\English",
-    // );
+    // 1. Parse IPF archives with limited threads
+    let start = std::time::Instant::now();
+    let mut parsed_ipfs = parse_game_ipfs(game_root)?;
+    let duration = start.elapsed();
 
-    // // 1. Parse IPF archives with limited threads
-    // let start = std::time::Instant::now();
-    // let mut parsed_ipfs = parse_game_ipfs(game_root)?;
-    // let duration = start.elapsed();
+    println!(
+        "Parsed total {} IPF archives from both 'data' and 'patch' in {:.2?}",
+        parsed_ipfs.len(),
+        duration,
+    );
 
-    // println!(
-    //     "Parsed total {} IPF archives from both 'data' and 'patch' in {:.2?}",
-    //     parsed_ipfs.len(),
-    //     duration,
-    // );
+    for i in parsed_ipfs.iter().take(1) {
+        println!("Data IPF : {:?}\n", i);
+    }
+
+    let tree = build_versioned_tree(&parsed_ipfs);
+
+    // Multi-level path you want to inspect
+    let path = vec!["script"];
+    let target_file = "SCR_STEAM_EVENT_NOTICE_BOARD.lua";
+
+    let nodes = tree.find_nodes_by_path(&path);
+    if nodes.is_empty() {
+        println!("Path {:?} not found", path);
+    } else {
+        for (i, node) in nodes.iter().enumerate() {
+            println!("=== Full subtree [{}] for {:?} ===", i, path);
+            node.print_full(0);
+
+            println!("=== Shallow view [{}] for {:?} ===", i, path);
+            node.print_shallow();
+
+            // Check if the target file exists in this node
+            if node.has_file(target_file) {
+                println!("✅ File '{}' exists in this folder.", target_file);
+            } else {
+                println!("❌ File '{}' not found in this folder.", target_file);
+            }
+        }
+    }
 
     // // 2. Extract example file and print info
     // extract_and_print_example(&mut parsed_ipfs)?;
@@ -93,9 +133,12 @@ fn main() -> io::Result<()> {
     // for row in etc_data.iter().take(3) {
     //     println!("ETC row: {:?}", row);
     // }
+    // println!();
     // for row in item_data.iter().take(3) {
-    //     println!("ITEM row: {:?}\n", row);
+    //     println!("ITEM row: {:?}", row);
     // }
+    // println!();
+
     // // Load each duplicates file into its own variable
     // let xac_duplicates =
     //     parse_duplicates_xml(&game_root.join("release").join("xac_duplicates.xml"))?;
@@ -114,6 +157,6 @@ fn main() -> io::Result<()> {
     // println!("XPM duplicates: {}", xpm_duplicates.len());
     // println!("XSMTIME duplicates: {}", xsmtime_duplicates.len());
 
-    // println!("XAC data : {:?}", xac_duplicates.get(10).unwrap());
+    // println!("XAC data : {:?}", xac_duplicates.get(0).unwrap());
     Ok(())
 }

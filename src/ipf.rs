@@ -69,13 +69,22 @@ pub struct IPFFileTable {
     pub container_name_length: u16,
     pub container_name: String,
     pub directory_name: String,
+    pub file_path: Option<PathBuf>, // optional path
 }
 
 pub struct IPFRoot {
     pub header: IPFHeader,
     pub file_table: Vec<IPFFileTable>,
-    pub filepath: Option<PathBuf>,      // store file path
     reader: Option<BinaryReader<File>>, // internal reader for file extraction
+}
+
+impl std::fmt::Debug for IPFRoot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IPFRoot")
+            .field("header", &self.header)
+            .field("file_table", &self.file_table)
+            .finish()
+    }
 }
 
 impl IPFHeader {
@@ -113,7 +122,10 @@ impl IPFHeader {
 }
 
 impl IPFFileTable {
-    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+    pub fn read_from<R: Read + Seek>(
+        br: &mut BinaryReader<R>,
+        file_path: Option<PathBuf>,
+    ) -> io::Result<Self> {
         let directory_name_length = br.read_u16()?;
         let crc32 = br.read_u32()?;
         let file_size_compressed = br.read_u32()?;
@@ -137,6 +149,7 @@ impl IPFFileTable {
             container_name_length,
             container_name,
             directory_name,
+            file_path,
         })
     }
 
@@ -236,13 +249,12 @@ impl IPFRoot {
         reader.seek(SeekFrom::Start(header.file_table_pointer as u64))?;
         let mut file_table = Vec::with_capacity(header.file_count as usize);
         for _ in 0..header.file_count {
-            file_table.push(IPFFileTable::read_from(&mut reader)?);
+            file_table.push(IPFFileTable::read_from(&mut reader, Some(pathbuf.clone()))?);
         }
 
         Ok(IPFRoot {
             header,
             file_table,
-            filepath: Some(pathbuf),
             reader: Some(reader),
         })
     }
@@ -255,13 +267,12 @@ impl IPFRoot {
 
         let mut file_table = Vec::with_capacity(header.file_count as usize);
         for _ in 0..header.file_count {
-            file_table.push(IPFFileTable::read_from(br)?);
+            file_table.push(IPFFileTable::read_from(br, None)?);
         }
 
         Ok(IPFRoot {
             header,
             file_table,
-            filepath: None,
             reader: None,
         })
     }

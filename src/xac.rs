@@ -403,6 +403,54 @@ impl XACNode {
             false
         }
     }
+
+    /// Creates a new default node
+    pub fn new() -> Self {
+        Self {
+            local_quat: FileQuaternion::identity(),
+            scale_rot: FileQuaternion::identity(),
+            local_pos: FileVector3::default(),
+            local_scale: FileVector3::default(),
+            shear: FileVector3::default(),
+            skeletal_lods: 0,
+            parent_index: Self::ROOT_NODE_INDEX,
+        }
+    }
+
+    /// Reads an XACNode from a binary stream
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>, size: u32) -> io::Result<Self> {
+        let start_pos = br.position()?;
+
+        let local_quat = FileQuaternion::read_from(br)?;
+        let scale_rot = FileQuaternion::read_from(br)?;
+        let local_pos = FileVector3::read_from(br)?;
+        let local_scale = FileVector3::read_from(br)?;
+        let shear = FileVector3::read_from(br)?;
+        let skeletal_lods = br.read_u32()?;
+        let parent_index = br.read_u32()?;
+
+        let end_pos = br.position()?;
+        let parsed_bytes = (end_pos - start_pos) as u32;
+
+        if parsed_bytes != size {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "XACNode chunk size mismatch: expected {}, parsed {}",
+                    size, parsed_bytes
+                ),
+            ));
+        }
+        Ok(Self {
+            local_quat,
+            scale_rot,
+            local_pos,
+            local_scale,
+            shear,
+            skeletal_lods,
+            parent_index,
+        })
+    }
 }
 
 /// Node structure (version 2) with flags
@@ -1187,6 +1235,7 @@ pub type AttachmentNodes = XACAttachmentNodes;
 #[derive(Debug)]
 pub enum XACChunk {
     Unknown(FileChunk, Vec<u8>), // raw data
+    Node(FileChunk, XACNode),
 }
 
 #[derive(Debug)]
@@ -1206,6 +1255,10 @@ impl XACRoot {
                 std::cmp::min(chunk_header.size_in_bytes as u64, bytes_left) as usize;
             // Parse chunk payload
             let chunk = match (chunk_header.chunk_id, chunk_header.version) {
+                (xac_chunk_ids::NODE, 1) => {
+                    let node = XACNode::read_from(br, chunk_header.size_in_bytes)?;
+                    XACChunk::Node(chunk_header, node)
+                }
                 _ => XACChunk::Unknown(chunk_header, (&mut *br).read_vec(size_to_read)?),
             };
 

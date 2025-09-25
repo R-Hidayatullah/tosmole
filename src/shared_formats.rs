@@ -116,6 +116,13 @@ impl FileVector3 {
     pub fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
+
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        let x = br.read_f32()?;
+        let y = br.read_f32()?;
+        let z = br.read_f32()?;
+        Ok(Self { x, y, z })
+    }
 }
 
 /// Compressed 3D vector with 16-bit integer components
@@ -182,6 +189,14 @@ impl FileQuaternion {
 
     pub fn identity() -> Self {
         Self::default()
+    }
+
+    pub fn read_from<R: Read + Seek>(br: &mut BinaryReader<R>) -> io::Result<Self> {
+        let x = br.read_f32()?;
+        let y = br.read_f32()?;
+        let z = br.read_f32()?;
+        let w = br.read_f32()?;
+        Ok(Self { x, y, z, w })
     }
 }
 

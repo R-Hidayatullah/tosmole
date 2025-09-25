@@ -97,8 +97,8 @@ fn main() -> io::Result<()> {
     let tree = build_versioned_tree(&parsed_ipfs);
 
     // Multi-level path you want to inspect
-    let path = vec!["script"];
-    let target_file = "SCR_STEAM_EVENT_NOTICE_BOARD.lua";
+    let path = vec!["forkparticle", "texture"];
+    let target_file = "";
 
     let nodes = tree.find_nodes_by_path(&path);
     if nodes.is_empty() {
@@ -111,11 +111,13 @@ fn main() -> io::Result<()> {
             println!("=== Shallow view [{}] for {:?} ===", i, path);
             node.print_shallow();
 
-            // Check if the target file exists in this node
-            if node.has_file(target_file) {
-                println!("✅ File '{}' exists in this folder.", target_file);
-            } else {
-                println!("❌ File '{}' not found in this folder.", target_file);
+            if !target_file.is_empty() {
+                // Check if the target file exists in this node
+                if node.has_file(target_file) {
+                    println!("✅ File '{}' exists in this folder.", target_file);
+                } else {
+                    println!("❌ File '{}' not found in this folder.", target_file);
+                }
             }
         }
     }

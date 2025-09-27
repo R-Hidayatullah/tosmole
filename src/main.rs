@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, io, path::Path};
 
 use crate::ipf::IPFFileTable;
 
+mod category;
 mod ies;
 mod ipf;
 mod tsv;
@@ -45,23 +46,8 @@ fn main() -> io::Result<()> {
     let grouped: BTreeMap<String, Vec<IPFFileTable>> =
         ipf::group_file_tables_by_directory(all_files);
 
-    let mut printed_dirs = 0;
-    let path_count = 2;
-
-    for (dir, files) in &grouped {
-        if files.len() > path_count {
-            println!("\nDirectory: {}", dir);
-
-            for file in files.iter().take(path_count) {
-                println!("  {:?}", file.file_path.as_ref().unwrap());
-            }
-
-            printed_dirs += 1;
-            if printed_dirs >= 10 {
-                break; // stop after printing 10 directories
-            }
-        }
-    }
+    let result = category::build_tree(grouped);
+    result.print_limited("", 3, 5);
 
     ipf::print_hex_viewer(&data);
 

@@ -1,26 +1,67 @@
 use ipf::IPFRoot;
-use std::io;
+use std::{io, path::Path};
 
 mod ies;
 mod ipf;
+mod tsv;
+mod xml;
 
 fn main() -> io::Result<()> {
-    let root = IPFRoot::from_file("tests/379124_001001.ipf")?;
+    let game_root = Path::new(r"/home/ridwan/Documents/TreeOfSaviorCN/");
+    let lang_folder =
+        Path::new(r"/home/ridwan/Documents/TreeOfSaviorCN/release/languageData/English");
+    let index = 0;
+    let start = std::time::Instant::now();
+    let parsed_ipfs = ipf::parse_game_ipfs(game_root)?;
+    let duration = start.elapsed();
 
-    println!("Header : {:#?}", root.header);
-    println!("Data Length : {:?}", root.file_table.len());
-    let index = 37;
-    if let Some(file_entry) = root.file_table.get(index) {
-        let result_data = file_entry.extract_data()?;
-        println!("Table Index {}: {:?}", index, file_entry);
-        println!("Result Index {} length: {}", index, result_data.len());
-        // Convert to string (text) if possible
-        match String::from_utf8(result_data) {
-            Ok(text) => println!("Result Index 38 as text:\n{}", text),
-            Err(_) => println!("Result Index 38 is not valid UTF-8 text"),
-        }
-    } else {
-        println!("File table index 37 does not exist");
+    println!(
+        "Parsed total {} IPF archives from both 'data' and 'patch' in {:.2?}",
+        parsed_ipfs.len(),
+        duration,
+    );
+    let data = parsed_ipfs
+        .get(index)
+        .unwrap()
+        .file_table
+        .get(0)
+        .unwrap()
+        .extract_data()
+        .unwrap();
+    ipf::print_hex_viewer(&data);
+    let (etc_data, item_data) = tsv::parse_language_data(lang_folder)?;
+
+    println!("ETC.tsv lines: {}", etc_data.len());
+    println!("ITEM.tsv lines: {}\n", item_data.len());
+
+    // Print first 3 rows of each
+    for row in etc_data.iter().take(3) {
+        println!("ETC row: {:?}", row);
     }
+    println!();
+    for row in item_data.iter().take(3) {
+        println!("ITEM row: {:?}", row);
+    }
+    println!();
+
+    // Load each duplicates file into its own variable
+    let xac_duplicates =
+        xml::parse_duplicates_xml(&game_root.join("release").join("xac_duplicates.xml"))?;
+    let xsm_duplicates =
+        xml::parse_duplicates_xml(&game_root.join("release").join("xsm_duplicates.xml"))?;
+    let dds_duplicates =
+        xml::parse_duplicates_xml(&game_root.join("release").join("dds_duplicates.xml"))?;
+    let xpm_duplicates =
+        xml::parse_duplicates_xml(&game_root.join("release").join("xpm_duplicates.xml"))?;
+    let xsmtime_duplicates =
+        xml::parse_duplicates_xml(&game_root.join("release").join("xsmtime_duplicates.xml"))?;
+
+    println!("XAC duplicates: {}", xac_duplicates.len());
+    println!("XSM duplicates: {}", xsm_duplicates.len());
+    println!("DDS duplicates: {}", dds_duplicates.len());
+    println!("XPM duplicates: {}", xpm_duplicates.len());
+    println!("XSMTIME duplicates: {}", xsmtime_duplicates.len());
+
+    println!("XAC data : {:?}", xac_duplicates.get(0).unwrap());
     Ok(())
 }

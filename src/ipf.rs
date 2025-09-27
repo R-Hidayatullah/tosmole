@@ -1,9 +1,11 @@
 use binrw::{BinReaderExt, binread};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::File,
+    fs::{File, read_dir},
     io::{self, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex, mpsc},
+    thread,
 };
 
 const HEADER_LOCATION: i64 = -24;
@@ -206,6 +208,112 @@ impl IPFRoot {
     }
 }
 
+pub fn parse_all_ipf_files_limited_threads(
+    dir: &Path,
+    max_threads: usize,
+) -> io::Result<Vec<IPFRoot>> {
+    let ipf_paths: Vec<PathBuf> = read_dir(dir)?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().map_or(false, |ext| ext == "ipf"))
+        .collect();
+
+    let (tx_paths, rx_paths) = mpsc::channel::<PathBuf>();
+    let rx_paths = Arc::new(Mutex::new(rx_paths));
+    let (tx_results, rx_results) = mpsc::channel::<io::Result<IPFRoot>>();
+
+    for path in ipf_paths {
+        tx_paths.send(path).unwrap();
+    }
+    drop(tx_paths); // signal no more tasks
+
+    let mut handles = Vec::new();
+    for _ in 0..max_threads {
+        let rx_paths = Arc::clone(&rx_paths);
+        let tx_results = tx_results.clone();
+
+        let handle = thread::spawn(move || {
+            while let Ok(path) = rx_paths.lock().unwrap().recv() {
+                let res = IPFRoot::from_file(&path).map(|root| root);
+                let _ = tx_results.send(res);
+            }
+        });
+        handles.push(handle);
+    }
+
+    drop(tx_results); // optional: close sender so iterator will end
+
+    // Collect all results
+    let mut results = Vec::new();
+    for res in rx_results.iter() {
+        results.push(res?);
+    }
+
+    for handle in handles {
+        handle.join().expect("Worker thread panicked");
+    }
+
+    Ok(results)
+}
+
+pub fn parse_game_folders_multithread_limited(
+    game_root: &Path,
+    max_threads: usize,
+) -> io::Result<Vec<IPFRoot>> {
+    let data_dir = game_root.join("data");
+    let patch_dir = game_root.join("patch");
+
+    let handle_data = {
+        let data_dir = data_dir.clone();
+        thread::spawn(move || parse_all_ipf_files_limited_threads(&data_dir, max_threads))
+    };
+    let handle_patch = {
+        let patch_dir = patch_dir.clone();
+        thread::spawn(move || parse_all_ipf_files_limited_threads(&patch_dir, max_threads))
+    };
+
+    let mut all_parsed = handle_data.join().unwrap()?;
+    all_parsed.extend(handle_patch.join().unwrap()?);
+
+    Ok(all_parsed)
+}
+
+pub fn parse_game_ipfs(game_root: &Path) -> io::Result<Vec<IPFRoot>> {
+    parse_game_folders_multithread_limited(game_root, 4)
+}
+
+pub fn print_hex_viewer(data: &[u8]) {
+    const BYTES_PER_LINE: usize = 16;
+
+    for (i, chunk) in data.chunks(BYTES_PER_LINE).enumerate() {
+        // Offset decimal (8 digits padded)
+        print!("{:08}  ", i * BYTES_PER_LINE);
+
+        // Hex bytes uppercase
+        for b in chunk.iter() {
+            print!("{:02X} ", b);
+        }
+
+        // Pad hex if last line shorter
+        let pad_spaces = (BYTES_PER_LINE - chunk.len()) * 3;
+        for _ in 0..pad_spaces {
+            print!(" ");
+        }
+
+        // ASCII chars or '.' if non-printable
+        print!(" ");
+        for &b in chunk.iter() {
+            let c = if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                '.'
+            };
+            print!("{}", c);
+        }
+
+        println!();
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -201,17 +201,19 @@ impl IPFRoot {
             .read_le()
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("binrw error: {}", e)))?;
 
-        // Set file_path and prefix container name
         for f in &mut root.file_table {
             f.file_path = Some(path_ref.to_path_buf());
 
-            // Prepend container_name to directory_name
-            // Remove extension from container name
+            // Prepend container_name to directory_name if not already present
             let container_stem = Path::new(&f.container_name)
                 .file_stem()
                 .unwrap()
-                .to_string_lossy();
-            f.directory_name = format!("{}/{}", container_stem, f.directory_name);
+                .to_string_lossy()
+                .to_lowercase();
+
+            if !f.directory_name.starts_with(&container_stem) {
+                f.directory_name = format!("{}/{}", container_stem, f.directory_name);
+            }
         }
 
         Ok(root)

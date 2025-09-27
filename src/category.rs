@@ -77,6 +77,130 @@ impl Folder {
             println!("{}File: {:?}", prefix, file.file_path.as_ref().unwrap());
         }
     }
+
+    /// Shallow search for a folder: returns subfolder names and files directly inside it
+    pub fn search_folder_shallow(&self, folder_name: &str) -> Option<(Vec<String>, Vec<String>)> {
+        self.subfolders.get(folder_name).map(|folder| {
+            let subfolders: Vec<String> = folder.subfolders.keys().cloned().collect();
+            let files: Vec<String> = folder
+                .files
+                .iter()
+                .map(|f| format!("{}/{}", folder_name, f.directory_name))
+                .collect();
+            (subfolders, files)
+        })
+    }
+
+    /// Recursive search for files matching `file_name`, returns full path and reference
+    pub fn search_file_recursive<'a>(
+        &'a self,
+        file_name: &str,
+        current_path: &str,
+    ) -> Vec<(String, &'a IPFFileTable)> {
+        let mut results = Vec::new();
+
+        // Check files in current folder
+        for f in &self.files {
+            if f.directory_name == file_name {
+                let full_path = if current_path.is_empty() {
+                    f.directory_name.clone()
+                } else {
+                    format!("{}/{}", current_path, f.directory_name)
+                };
+                results.push((full_path, f));
+            }
+        }
+
+        // Recurse into subfolders
+        for (name, folder) in &self.subfolders {
+            let path = if current_path.is_empty() {
+                name.clone()
+            } else {
+                format!("{}/{}", current_path, name)
+            };
+            results.extend(folder.search_file_recursive(file_name, &path));
+        }
+
+        results
+    }
+
+    /// Search file by full path, e.g., "ui/brush/spraycursor_1.tga"
+    pub fn search_file_by_full_path<'a>(
+        &'a self,
+        full_path: &str,
+    ) -> Vec<(String, &'a IPFFileTable)> {
+        let mut results = Vec::new();
+        let parts: Vec<&str> = full_path.split('/').collect();
+        self.search_file_by_parts(&parts, "", &mut results);
+        results
+    }
+
+    fn search_file_by_parts<'a>(
+        &'a self,
+        parts: &[&str],
+        current_path: &str,
+        results: &mut Vec<(String, &'a IPFFileTable)>,
+    ) {
+        if parts.is_empty() {
+            return;
+        }
+
+        if parts.len() == 1 {
+            // Last part = filename
+            let filename = parts[0];
+            for file in &self.files {
+                if file.directory_name == filename {
+                    let full_path = if current_path.is_empty() {
+                        filename.to_string()
+                    } else {
+                        format!("{}/{}", current_path, filename)
+                    };
+                    results.push((full_path, file));
+                }
+            }
+        } else {
+            // Intermediate folder
+            let folder_name = parts[0];
+            if let Some(subfolder) = self.subfolders.get(folder_name) {
+                let new_path = if current_path.is_empty() {
+                    folder_name.to_string()
+                } else {
+                    format!("{}/{}", current_path, folder_name)
+                };
+                subfolder.search_file_by_parts(&parts[1..], &new_path, results);
+            }
+        }
+    }
+}
+
+/// Print shallow folder view, showing top N subfolders and M files per folder
+pub fn print_shallow_tree(root: &Folder, max_subfolders: usize, max_files: usize) {
+    println!("Root folder:");
+
+    // Show subfolders (shallow)
+    for (i, (folder_name, folder_node)) in root.subfolders.iter().enumerate() {
+        if i >= max_subfolders {
+            break;
+        }
+        println!("  Folder: {}", folder_name);
+
+        // Show first few files in this subfolder
+        for (j, file) in folder_node.files.iter().enumerate() {
+            if j >= max_files {
+                break;
+            }
+            println!("    File: {:?}", file.directory_name);
+        }
+    }
+
+    // Also show root-level files
+    println!("  Root files:");
+    for (i, file) in root.files.iter().enumerate() {
+        if i >= max_files {
+            break;
+        }
+        println!("    File: {:?}", file.directory_name);
+    }
 }
 
 // Usage
@@ -84,8 +208,15 @@ pub fn build_tree(grouped: BTreeMap<String, Vec<IPFFileTable>>) -> Folder {
     let mut root = Folder::new();
 
     for (dir, mut files) in grouped.into_iter() {
-        // Move each file into the tree
-        for file in files.drain(..) {
+        for mut file in files.drain(..) {
+            // Keep only the filename in directory_name
+            if let Some(name) = std::path::Path::new(&file.directory_name)
+                .file_name()
+                .and_then(|s| s.to_str())
+            {
+                file.directory_name = name.to_string();
+            }
+
             root.insert(&dir, file);
         }
     }

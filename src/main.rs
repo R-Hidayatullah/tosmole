@@ -48,14 +48,24 @@ fn main() -> io::Result<()> {
 
     let result = category::build_tree(grouped);
 
-    for file in &result.files {
-        if file.directory_name.contains("06.dds") {
-            println!(
-                "Found {} at result: {:?}",
-                file.directory_name, file.file_path
-            );
-        }
+    // category::print_shallow_tree(&result, 5, 3);
+    // Shallow search for folder "ui"
+    if let Some((subfolders, files)) = result.search_folder_shallow("ui") {
+        println!("Folder 'ui' subfolders: {:?}", subfolders);
+        println!("Folder 'ui' files: {:?}", files);
     }
+
+    // Recursive search for file "spraycursor_1.tga"
+    let matches = result.search_file_recursive("06.dds", "");
+    for (full_path, file) in matches {
+        println!("Found file: {} ({:?})", full_path, file.file_path);
+    }
+
+    let matches = result.search_file_by_full_path("ui/brush/spraycursor_1.tga");
+    for (full_path, file) in matches {
+        println!("Found file: {} ({:?})", full_path, file.file_path);
+    }
+
     ipf::print_hex_viewer(&data);
 
     println!("ETC.tsv lines: {}", etc_data.len());

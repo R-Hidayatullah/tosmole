@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use ipf::IPFRoot;
 use std::{io, path::Path};
 
@@ -12,7 +14,7 @@ fn main() -> io::Result<()> {
         Path::new(r"/home/ridwan/Documents/TreeOfSaviorCN/release/languageData/English");
     let index = 0;
     let start = std::time::Instant::now();
-    let parsed_ipfs = ipf::parse_game_ipfs(game_root)?;
+    let mut parsed_ipfs = ipf::parse_game_ipfs(game_root)?;
     let duration = start.elapsed();
 
     println!(
@@ -20,16 +22,24 @@ fn main() -> io::Result<()> {
         parsed_ipfs.len(),
         duration,
     );
+
     let data = parsed_ipfs
         .get(index)
         .unwrap()
         .file_table
-        .get(0)
+        .get(index)
         .unwrap()
         .extract_data()
         .unwrap();
-    ipf::print_hex_viewer(&data);
+
+    let mut all_files = ipf::collect_file_tables_from_parsed(&mut parsed_ipfs);
+    ipf::sort_file_tables_by_folder_then_name(&mut all_files);
+
     let (etc_data, item_data) = tsv::parse_language_data(lang_folder)?;
+
+    println!("Total IPF files collected: {}", all_files.len());
+
+    ipf::print_hex_viewer(&data);
 
     println!("ETC.tsv lines: {}", etc_data.len());
     println!("ITEM.tsv lines: {}\n", item_data.len());

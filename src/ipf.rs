@@ -1,6 +1,7 @@
 use binrw::{BinReaderExt, binread};
 use serde::{Deserialize, Serialize};
 use std::{
+    cmp::Ordering,
     fs::{File, read_dir},
     io::{self, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -280,6 +281,43 @@ pub fn parse_game_folders_multithread_limited(
 
 pub fn parse_game_ipfs(game_root: &Path) -> io::Result<Vec<IPFRoot>> {
     parse_game_folders_multithread_limited(game_root, 4)
+}
+
+pub fn collect_file_tables_from_parsed(parsed_ipfs: &mut Vec<IPFRoot>) -> Vec<IPFFileTable> {
+    let mut all_file_table = Vec::new();
+
+    for ipf_root in parsed_ipfs.iter_mut() {
+        // Move file_table out of each IPFRoot, leaving it empty
+        let file_table = std::mem::take(&mut ipf_root.file_table);
+        all_file_table.extend(file_table);
+    }
+
+    all_file_table
+}
+
+/// Normalize filename for sorting: lowercase and remove leading underscores
+fn normalize_filename(name: &str) -> String {
+    name.trim_start_matches('_').to_lowercase()
+}
+
+/// Sorts IPF files: folder first, then human-friendly filename order
+pub fn sort_file_tables_by_folder_then_name(file_tables: &mut Vec<IPFFileTable>) {
+    file_tables.sort_by(|a, b| {
+        let path_a = a.file_path.as_ref().unwrap();
+        let path_b = b.file_path.as_ref().unwrap();
+
+        // Compare folders first
+        let folder_ord = path_a.parent().unwrap().cmp(path_b.parent().unwrap());
+        if folder_ord != Ordering::Equal {
+            return folder_ord;
+        }
+
+        // Then compare normalized filenames
+        let name_a = normalize_filename(path_a.file_name().unwrap().to_str().unwrap());
+        let name_b = normalize_filename(path_b.file_name().unwrap().to_str().unwrap());
+
+        name_a.cmp(&name_b)
+    });
 }
 
 pub fn print_hex_viewer(data: &[u8]) {

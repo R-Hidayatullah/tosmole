@@ -2,6 +2,7 @@ use binrw::{BinReaderExt, binread};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
+    collections::BTreeMap,
     fs::{File, read_dir},
     io::{self, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -318,6 +319,21 @@ pub fn sort_file_tables_by_folder_then_name(file_tables: &mut Vec<IPFFileTable>)
 
         name_a.cmp(&name_b)
     });
+}
+
+/// Group IPFFileTable by directory name, moving the items
+pub fn group_file_tables_by_directory(
+    file_tables: Vec<IPFFileTable>,
+) -> BTreeMap<String, Vec<IPFFileTable>> {
+    let mut map: BTreeMap<String, Vec<IPFFileTable>> = BTreeMap::new();
+
+    for file in file_tables {
+        map.entry(file.directory_name.clone()) // use directory_name as key
+            .or_default()
+            .push(file); // move file into the Vec
+    }
+
+    map
 }
 
 pub fn print_hex_viewer(data: &[u8]) {

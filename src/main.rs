@@ -47,8 +47,15 @@ fn main() -> io::Result<()> {
         ipf::group_file_tables_by_directory(all_files);
 
     let result = category::build_tree(grouped);
-    result.print_limited("", 3, 5);
 
+    for file in &result.files {
+        if file.directory_name.contains("06.dds") {
+            println!(
+                "Found {}/{} at result: {:?}",
+                file.container_name, file.directory_name, file.file_path
+            );
+        }
+    }
     ipf::print_hex_viewer(&data);
 
     println!("ETC.tsv lines: {}", etc_data.len());

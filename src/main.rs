@@ -94,33 +94,33 @@ fn main() -> io::Result<()> {
         println!("Data IPF : {:?}\n", i);
     }
 
-    let tree = build_versioned_tree(parsed_ipfs);
+    // let tree = build_versioned_tree(parsed_ipfs);
 
-    // Empty path = root node itself
-    let path: Vec<&str> = vec!["helpimg"];
-    let target_file = "";
+    // // Empty path = root node itself
+    // let path: Vec<&str> = vec!["addon", "status"];
+    // let target_file = "";
 
-    let nodes = tree.find_nodes_by_path(&path);
+    // let nodes = tree.find_nodes_by_path(&path);
 
-    if nodes.is_empty() {
-        println!("Path {:?} not found", path);
-    } else {
-        for (i, node) in nodes.iter().enumerate() {
-            // println!("=== Full subtree [{}] for {:?} ===", i, path);
-            // node.print_full(0);
+    // if nodes.is_empty() {
+    //     println!("Path {:?} not found", path);
+    // } else {
+    //     for (i, node) in nodes.iter().enumerate() {
+    //         // println!("=== Full subtree [{}] for {:?} ===", i, path);
+    //         // node.print_full(0);
 
-            println!("=== Shallow view [{}] for {:?} ===", i, path);
-            node.print_shallow();
+    //         println!("=== Shallow view [{}] for {:?} ===", i, path);
+    //         node.print_shallow();
 
-            if !target_file.is_empty() {
-                if node.has_file(target_file) {
-                    println!("✅ File '{}' exists in this folder.", target_file);
-                } else {
-                    println!("❌ File '{}' not found in this folder.", target_file);
-                }
-            }
-        }
-    }
+    //         if !target_file.is_empty() {
+    //             if node.has_file(target_file) {
+    //                 println!("✅ File '{}' exists in this folder.", target_file);
+    //             } else {
+    //                 println!("❌ File '{}' not found in this folder.", target_file);
+    //             }
+    //         }
+    //     }
+    // }
 
     // // 2. Extract example file and print info
     // extract_and_print_example(&mut parsed_ipfs)?;

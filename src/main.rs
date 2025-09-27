@@ -51,8 +51,8 @@ fn main() -> io::Result<()> {
     for file in &result.files {
         if file.directory_name.contains("06.dds") {
             println!(
-                "Found {}/{} at result: {:?}",
-                file.container_name, file.directory_name, file.file_path
+                "Found {} at result: {:?}",
+                file.directory_name, file.file_path
             );
         }
     }

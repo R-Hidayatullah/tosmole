@@ -230,4 +230,35 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_ipf_file_index_37_is_valid_utf8() -> io::Result<()> {
+        // Read IPFRoot from file
+        let root = IPFRoot::from_file("tests/379124_001001.ipf")?;
+
+        // Ensure file table is not empty
+        assert!(
+            !root.file_table.is_empty(),
+            "File table should not be empty"
+        );
+
+        // Choose the index to test
+        let index = 37;
+
+        if let Some(file_entry) = root.file_table.get(index) {
+            // Extract data from the file
+            let result_data = file_entry.extract_data()?;
+
+            // Assert that the extracted data is valid UTF-8
+            assert!(
+                String::from_utf8(result_data).is_ok(),
+                "File at index {} is not valid UTF-8",
+                index
+            );
+        } else {
+            panic!("File table index {} does not exist", index);
+        }
+
+        Ok(())
+    }
 }

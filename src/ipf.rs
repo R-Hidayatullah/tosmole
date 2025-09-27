@@ -2,7 +2,7 @@ use binrw::{BinReaderExt, binread};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
-    io::{self, BufReader, SeekFrom},
+    io::{self, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -79,6 +79,99 @@ pub struct IPFFileTable {
 
     #[brw(ignore)]
     pub file_path: Option<PathBuf>,
+}
+
+impl IPFFileTable {
+    /// Check if the file should not be decompressed based on extension
+    fn should_skip_decompression(&self) -> bool {
+        let ignored_exts = [".fsb", ".jpg", ".mp3"];
+        self.directory_name
+            .rsplit('.')
+            .next()
+            .map(|ext| format!(".{}", ext.to_ascii_lowercase()))
+            .map_or(false, |ext| ignored_exts.contains(&ext.as_str()))
+    }
+
+    pub fn extract_data(&self) -> io::Result<Vec<u8>> {
+        let path = self.file_path.as_ref().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::Other, "file_path not set for this IPF entry")
+        })?;
+
+        let mut file = File::open(path)?;
+
+        // Seek to the file's data
+        file.seek(SeekFrom::Start(self.file_pointer as u64))?;
+
+        // Read the raw compressed/encrypted bytes
+        let mut buffer = vec![0u8; self.file_size_compressed as usize];
+        file.read_exact(&mut buffer)?;
+
+        // Decrypt and optionally decompress
+        if self.should_skip_decompression() {
+            self.decrypt_in_place(&mut buffer);
+        } else {
+            self.decrypt_in_place(&mut buffer);
+            buffer = self.decompress_data(&buffer)?;
+        }
+
+        Ok(buffer)
+    }
+
+    /// Decrypt buffer in place using IPF decryption algorithm
+    fn decrypt_in_place(&self, buffer: &mut [u8]) {
+        if buffer.is_empty() {
+            return;
+        }
+
+        let mut keys = self.generate_keys();
+        let steps = (buffer.len() - 1) / 2 + 1;
+
+        for i in 0..steps {
+            let v = (keys[2] & 0xFFFD) | 2;
+            let idx = i * 2;
+            if idx < buffer.len() {
+                buffer[idx] ^= ((v.wrapping_mul(v ^ 1)) >> 8) as u8;
+                self.update_keys(&mut keys, buffer[idx]);
+            }
+        }
+    }
+
+    /// Decompress zlib/deflate data
+    fn decompress_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
+        let mut output = Vec::with_capacity(self.file_size_uncompressed as usize);
+        flate2::Decompress::new(false)
+            .decompress_vec(data, &mut output, flate2::FlushDecompress::Finish)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Failed to decompress"))?;
+        Ok(output)
+    }
+
+    /// Compute CRC32 for key update
+    fn compute_crc32(&self, crc: u32, b: u8) -> u32 {
+        CRC32_TABLE[((crc ^ b as u32) & 0xFF) as usize] ^ (crc >> 8)
+    }
+
+    /// Extract byte at a given position from u32 value
+    fn extract_byte_at(&self, value: u32, byte_index: usize) -> u8 {
+        (value >> (byte_index * 8)) as u8
+    }
+
+    /// Update decryption keys using a single byte
+    fn update_keys(&self, keys: &mut [u32; 3], byte: u8) {
+        keys[0] = self.compute_crc32(keys[0], byte);
+        keys[1] = 0x8088405u32
+            .wrapping_mul((keys[0] as u8 as u32).wrapping_add(keys[1]))
+            .wrapping_add(1);
+        keys[2] = self.compute_crc32(keys[2], self.extract_byte_at(keys[1], 3));
+    }
+
+    /// Generate initial decryption keys from PASSWORD
+    fn generate_keys(&self) -> [u32; 3] {
+        let mut keys = [0x12345678, 0x23456789, 0x34567890];
+        for &b in PASSWORD.iter() {
+            self.update_keys(&mut keys, b);
+        }
+        keys
+    }
 }
 
 #[binread]

@@ -121,6 +121,20 @@ async fn main() -> io::Result<()> {
         "   Description: Parse the file as an IES (lighting profile). Optionally specify a version (default is 0).\n"
     );
 
+    println!("7. GET /api/file/preview?path=<file>&version=<index>");
+    println!(
+        "   Usage: curl \"http://127.0.0.1:8080/api/file/preview?path=ies/actor.ies&version=0\""
+    );
+    println!(
+        "   Description: Preview the file according to its type:\n\
+     - .ies → parsed JSON IES lighting profile\n\
+     - .xml → raw XML text\n\
+     - .lua → raw Lua text\n\
+     - .png/.jpg/.jpeg/.bmp/.tga → image bytes\n\
+     - others → raw binary data\n\
+     Optionally specify a version (default is 0).\n"
+    );
+
     HttpServer::new(move || {
         App::new()
             .app_data(folder_tree_data.clone())

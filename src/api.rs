@@ -252,6 +252,68 @@ pub async fn parse_file_as_ies(
     HttpResponse::InternalServerError().body("Failed to parse as IES")
 }
 
+#[derive(Debug, Deserialize)]
+pub struct FilePreviewQuery {
+    pub path: String,
+    pub version: Option<usize>,
+}
+
+#[get("/api/file/preview")]
+pub async fn preview_file(
+    query: web::Query<FilePreviewQuery>,
+    folder_tree: web::Data<Arc<Folder>>,
+) -> impl Responder {
+    let results = folder_tree.search_file_by_full_path(&query.path);
+    let version = query.version.unwrap_or(0); // default to version 0
+
+    let (_full_path, file_table) = match results.get(version) {
+        Some(entry) => entry,
+        None => return HttpResponse::NotFound().body("File/version not found"),
+    };
+
+    // Determine file type by extension
+    let ext = _full_path.split('.').last().unwrap_or("").to_lowercase();
+
+    // Extract raw data from the IPF
+    let data = match file_table.extract_data() {
+        Ok(d) => d,
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to extract file data"),
+    };
+
+    match ext.as_str() {
+        "ies" => {
+            if let Ok(ies) = IESRoot::from_bytes(&data) {
+                HttpResponse::Ok().json(ies)
+            } else {
+                HttpResponse::InternalServerError().body("Failed to parse IES file")
+            }
+        }
+        "xml" => {
+            let text = String::from_utf8_lossy(&data); // works for &[u8]
+            HttpResponse::Ok()
+                .content_type("text/plain")
+                .body(text.to_string())
+        }
+
+        "lua" => {
+            if let Ok(text) = String::from_utf8(data) {
+                HttpResponse::Ok().content_type("text/plain").body(text)
+            } else {
+                HttpResponse::InternalServerError().body("Failed to read Lua file")
+            }
+        }
+
+        "png" => HttpResponse::Ok().content_type("image/png").body(data),
+        "jpg" | "jpeg" => HttpResponse::Ok().content_type("image/jpeg").body(data),
+        "bmp" => HttpResponse::Ok().content_type("image/bmp").body(data),
+        "tga" => HttpResponse::Ok().content_type("image/x-tga").body(data),
+
+        _ => HttpResponse::Ok()
+            .content_type("application/octet-stream")
+            .body(data), // fallback for unknown types
+    }
+}
+
 /// -------------------------
 /// Initialize API Routes
 /// -------------------------
@@ -262,4 +324,5 @@ pub fn init_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(search_file_fullpath);
     cfg.service(download_file);
     cfg.service(parse_file_as_ies);
+    cfg.service(preview_file);
 }

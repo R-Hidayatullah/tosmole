@@ -111,9 +111,7 @@ impl IPFFileTable {
         file.read_exact(&mut buffer)?;
 
         // Decrypt and optionally decompress
-        if self.should_skip_decompression() {
-            self.decrypt_in_place(&mut buffer);
-        } else {
+        if !self.should_skip_decompression() {
             self.decrypt_in_place(&mut buffer);
             buffer = self.decompress_data(&buffer)?;
         }

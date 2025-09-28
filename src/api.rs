@@ -1,7 +1,9 @@
 use actix_files::NamedFile;
 use actix_web::{HttpResponse, Responder, get, web};
+use image::ImageReader;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tera::{Context, Tera};
@@ -283,54 +285,59 @@ pub async fn preview_file(
     folder_tree: web::Data<Arc<Folder>>,
 ) -> impl Responder {
     let results = folder_tree.search_file_by_full_path(&query.path);
-    let version = query.version.unwrap_or(0); // default to version 0
+    let version = query.version.unwrap_or(0);
 
     let (_full_path, file_table) = match results.get(version) {
         Some(entry) => entry,
         None => return HttpResponse::NotFound().body("File/version not found"),
     };
 
-    // Determine file type by extension
-    let ext = _full_path.split('.').last().unwrap_or("").to_lowercase();
-
-    // Extract raw data from the IPF
     let data = match file_table.extract_data() {
         Ok(d) => d,
         Err(_) => return HttpResponse::InternalServerError().body("Failed to extract file data"),
     };
 
+    let ext = _full_path.split('.').last().unwrap_or("").to_lowercase();
+
     match ext.as_str() {
-        "ies" => {
-            if let Ok(ies) = IESRoot::from_bytes(&data) {
-                HttpResponse::Ok().json(ies)
-            } else {
-                HttpResponse::InternalServerError().body("Failed to parse IES file")
-            }
-        }
+        // Image formats: only decode these
+        "png" | "jpg" | "jpeg" | "bmp" | "tga" => match ImageReader::new(Cursor::new(&data))
+            .with_guessed_format()
+        {
+            Ok(reader) => match reader.decode() {
+                Ok(img) => {
+                    let mut png_bytes = Vec::new();
+                    match img.write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png) {
+                        Ok(_) => HttpResponse::Ok().content_type("image/png").body(png_bytes),
+                        Err(_) => HttpResponse::InternalServerError().body("Failed to encode PNG"),
+                    }
+                }
+                Err(e) => HttpResponse::InternalServerError()
+                    .body(format!("Failed to decode image: {}", e)),
+            },
+            Err(e) => HttpResponse::InternalServerError()
+                .body(format!("Failed to guess image format: {}", e)),
+        },
+
+        // IES format
+        "ies" => match IESRoot::from_bytes(&data) {
+            Ok(ies) => HttpResponse::Ok().json(ies),
+            Err(_) => HttpResponse::InternalServerError().body("Failed to parse IES file"),
+        },
+
+        // Text-like formats
         "xml" | "skn" | "3dprop" | "3dworld" | "3drender" | "x" | "fx" | "sani" | "effect"
-        | "json" | "atlas" | "sprbin" | "xsd" => {
-            let text = String::from_utf8_lossy(&data); // works for &[u8]
+        | "json" | "atlas" | "sprbin" | "xsd" | "lua" | "lst" | "export" => {
+            let text = String::from_utf8_lossy(&data);
             HttpResponse::Ok()
                 .content_type("text/plain")
                 .body(text.to_string())
         }
 
-        "lua" => {
-            if let Ok(text) = String::from_utf8(data) {
-                HttpResponse::Ok().content_type("text/plain").body(text)
-            } else {
-                HttpResponse::InternalServerError().body("Failed to read Lua file")
-            }
-        }
-
-        "png" => HttpResponse::Ok().content_type("image/png").body(data),
-        "jpg" | "jpeg" => HttpResponse::Ok().content_type("image/jpeg").body(data),
-        "bmp" => HttpResponse::Ok().content_type("image/bmp").body(data),
-        "tga" => HttpResponse::Ok().content_type("image/x-tga").body(data),
-
+        // Fallback binary
         _ => HttpResponse::Ok()
             .content_type("application/octet-stream")
-            .body(data), // fallback for unknown types
+            .body(data),
     }
 }
 

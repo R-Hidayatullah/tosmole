@@ -29,7 +29,7 @@
         }
 
         .tree-panel {
-            width: 300px;
+            width: 400px;
             min-width: 250px;
             max-width: 500px;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -232,16 +232,23 @@
         .tree-children {
             margin-left: 20px;
             overflow: hidden;
-            transition: max-height 0.3s ease-out;
+            transform-origin: top;
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out, background-color 0.3s ease-out;
+            transform: scaleY(0);
+            opacity: 0;
         }
 
-        .tree-children.collapsed {
-            max-height: 0;
-        }
-
+        /* Expanded subfolders */
         .tree-children.expanded {
-            max-height: 1000px;
+            transform: scaleY(1);
+            opacity: 1;
+            background-color: rgba(38, 56, 108, 0.6);
+            /* slightly darker */
+            border-radius: 4px;
+            padding-left: 10px;
         }
+
+
 
         .file-icon {
             color: #666;

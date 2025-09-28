@@ -10,6 +10,7 @@ mod api;
 mod category;
 mod ies;
 mod ipf;
+mod shared_formats;
 mod tsv;
 mod web_data;
 mod xac;

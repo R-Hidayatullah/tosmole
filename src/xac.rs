@@ -1,153 +1,242 @@
-#![allow(dead_code)]
+use crate::shared_formats;
 use binrw::{BinRead, binread};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-enum SkeletalMotionType {
-    SkelmotiontypeNormal = 0, // A regular keyframe and keytrack based skeletal motion.
-    SkelmotiontypeWavelet = 1, // A wavelet compressed skeletal motion.
+/// Mesh type classification
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum MeshType {
+    /// Static mesh (buildings, props) - can still be transformed but no deformation
+    Static = 0,
+    /// Dynamic mesh with CPU-processed deformers
+    Dynamic = 1,
+    /// GPU-skinned mesh processed with skinned shaders
+    GpuSkinned = 2,
 }
 
-enum FileType {
-    FiletypeUnknown = 0,           // An unknown file, or something went wrong.
-    FiletypeActor,                 // An actor file (.xac).
-    FiletypeSkeletalmotion,        // A skeletal motion file (.xsm).
-    FiletypeWaveletskeletalmotion, // A wavelet compressed skeletal motion (.xsm).
-    FiletypePmorphmotion,          // A progressive morph motion file (.xpm).
+/// Phoneme sets for facial animation (bit flags)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PhonemeSet(pub u32);
+
+impl PhonemeSet {
+    pub const NONE: Self = Self(0);
+    pub const NEUTRAL_POSE: Self = Self(1 << 0);
+    pub const M_B_P_X: Self = Self(1 << 1);
+    pub const AA_AO_OW: Self = Self(1 << 2);
+    pub const IH_AE_AH_EY_AY_H: Self = Self(1 << 3);
+    pub const AW: Self = Self(1 << 4);
+    pub const N_NG_CH_J_DH_D_G_T_K_Z_ZH_TH_S_SH: Self = Self(1 << 5);
+    pub const IY_EH_Y: Self = Self(1 << 6);
+    pub const UW_UH_OY: Self = Self(1 << 7);
+    pub const F_V: Self = Self(1 << 8);
+    pub const L_EL: Self = Self(1 << 9);
+    pub const W: Self = Self(1 << 10);
+    pub const R_ER: Self = Self(1 << 11);
+
+    /// Checks if a specific phoneme set is enabled
+    pub fn contains(&self, other: Self) -> bool {
+        (self.0 & other.0) != 0
+    }
+
+    /// Combines phoneme sets
+    pub fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
 }
 
-// shared chunk ID's
-enum SharedChunk {
-    SharedChunkMotioneventtable = 50,
-    SharedChunkTimestamp = 51,
+/// Wavelet types for compression
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum WaveletType {
+    /// Haar wavelet - fastest option
+    Haar = 0,
+    /// Daubechies 4 wavelet - better compression, slower than Haar
+    Daub4 = 1,
+    /// CDF97 wavelet - best compression, slowest (used in JPEG)
+    Cdf97 = 2,
 }
 
-// matrix multiplication order
-enum MatrixMulOrder {
-    MulorderScaleRotTrans = 0,
-    MulorderRotScaleTrans = 1,
+/// Node clone flags for data sharing control
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NodeCloneFlags(pub u32);
+
+impl NodeCloneFlags {
+    /// Clone node attributes
+    pub const ATTRIBUTES: Self = Self(1 << 0);
+    /// Clone node stacks
+    pub const NODE_STACKS: Self = Self(1 << 1);
+    /// Clone collision node stacks
+    pub const NODE_COLLISION_STACKS: Self = Self(1 << 2);
+    /// Clone mesh data
+    pub const MESHES: Self = Self(1 << 3);
+    /// Clone collision mesh data
+    pub const COLLISION_MESHES: Self = Self(1 << 4);
+    /// Default cloning (only attributes)
+    pub const DEFAULT: Self = Self::ATTRIBUTES;
+    /// Clone everything
+    pub const ALL: Self = Self(
+        Self::ATTRIBUTES.0
+            | Self::NODE_STACKS.0
+            | Self::NODE_COLLISION_STACKS.0
+            | Self::MESHES.0
+            | Self::COLLISION_MESHES.0,
+    );
 }
 
-enum MeshType {
-    MeshtypeStatic = 0, //< Static mesh, like a cube or building (can still be position/scale/rotation animated though).
-    MeshtypeDynamic = 1, //< Has mesh deformers that have to be processed on the CPU.
-    MeshtypeGpuskinned = 2, //< Just a skinning mesh deformer that gets processed on the GPU with skinned shader.
+/// Node flags for various properties
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NodeFlags(pub u8);
+
+impl NodeFlags {
+    /// Include in bounds calculation
+    pub const INCLUDE_IN_BOUNDS_CALC: Self = Self(1 << 0);
+    /// Is an attachment node
+    pub const ATTACHMENT: Self = Self(1 << 1);
 }
 
-enum PhonemeSet {
-    PhonemesetNone = 0,
-    PhonemesetNeutralPose = 1 << 0,
-    PhonemesetMBPX = 1 << 1,
-    PhonemesetAaAoOw = 1 << 2,
-    PhonemesetIhAeAhEyAyH = 1 << 3,
-    PhonemesetAw = 1 << 4,
-    PhonemesetNNgChJDhDGTKZZhThSSh = 1 << 5,
-    PhonemesetIyEhY = 1 << 6,
-    PhonemesetUwUhOy = 1 << 7,
-    PhonemesetFV = 1 << 8,
-    PhonemesetLEl = 1 << 9,
-    PhonemesetW = 1 << 10,
-    PhonemesetREr = 1 << 11,
+/// Coordinate planes
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum Plane {
+    /// XY plane (Z is constant)
+    Xy = 0,
+    /// XZ plane (Y is constant)
+    Xz = 1,
+    /// YZ plane (X is constant)
+    Yz = 2,
 }
 
-enum WaveletType {
-    WaveletHaar = 0, // The Haar wavelet, which is most likely what you want to use. It is the fastest also.
-    WaveletDaub4 = 1, // Daubechies 4 wavelet, can result in bit better compression ratios, but slower than Haar.
-    WaveletCdf97 = 2, // The CDF97 wavelet, used in JPG as well. This is the slowest, but often results in the best compression ratios.
+/// Dependency types for shared data
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DependencyType(pub u32);
+
+impl DependencyType {
+    /// Shared meshes
+    pub const MESHES: Self = Self(1 << 0);
+    /// Shared transforms
+    pub const TRANSFORMS: Self = Self(1 << 1);
 }
 
-enum NodeFlags {
-    FlagIncludeinboundscalc = 1 << 0, // Specifies whether we have to include this node in the bounds calculation or not (true on default).
-    FlagAttachment = 1 << 1, // Indicates if this node is an attachment node or not (false on default).
+/// Actor clone flags for controlling data duplication
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActorCloneFlags(pub u32);
+
+impl ActorCloneFlags {
+    /// Clone materials
+    pub const MATERIALS: Self = Self(1 << 0);
+    /// Clone node attributes
+    pub const NODE_ATTRIBUTES: Self = Self(1 << 1);
+    /// Clone controllers
+    pub const CONTROLLERS: Self = Self(1 << 2);
+    /// Clone meshes
+    pub const MESHES: Self = Self(1 << 3);
+    /// Clone collision meshes
+    pub const COLLISION_MESHES: Self = Self(1 << 4);
+    /// Default cloning
+    pub const DEFAULT: Self = Self(Self::NODE_ATTRIBUTES.0 | Self::CONTROLLERS.0);
+    /// Clone everything
+    pub const ALL: Self = Self(
+        Self::MATERIALS.0
+            | Self::NODE_ATTRIBUTES.0
+            | Self::CONTROLLERS.0
+            | Self::MESHES.0
+            | Self::COLLISION_MESHES.0,
+    );
 }
 
-enum Plane {
-    PlaneXy = 0, // The XY plane, so where Z is constant.
-    PlaneXz = 1, // The XZ plane, so where Y is constant.
-    PlaneYz = 2, // The YZ plane, so where X is constant.
+/// Motion-based actor repositioning mask
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RepositioningMask(pub u32);
+
+impl RepositioningMask {
+    /// Update position based on repositioning node
+    pub const POSITION: Self = Self(1 << 0);
+    /// Update rotation based on repositioning node
+    pub const ROTATION: Self = Self(1 << 1);
+    /// Update scale based on repositioning node (currently unsupported)
+    pub const SCALE: Self = Self(1 << 2);
 }
 
-enum DependencyType {
-    DependencyMeshes = 1 << 0,     // Shared meshes.
-    DependencyTransforms = 1 << 1, // Shared transforms.
+/// Transform limit types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LimitType(pub u32);
+
+impl LimitType {
+    pub const TRANSLATION_X: Self = Self(1 << 0);
+    pub const TRANSLATION_Y: Self = Self(1 << 1);
+    pub const TRANSLATION_Z: Self = Self(1 << 2);
+    pub const ROTATION_X: Self = Self(1 << 3);
+    pub const ROTATION_Y: Self = Self(1 << 4);
+    pub const ROTATION_Z: Self = Self(1 << 5);
+    pub const SCALE_X: Self = Self(1 << 6);
+    pub const SCALE_Y: Self = Self(1 << 7);
+    pub const SCALE_Z: Self = Self(1 << 8);
 }
 
-/// The motion based actor repositioning mask
-enum RepositioningMask {
-    RepositionPosition = 1 << 0, // Update the actor position based on the repositioning node.
-    RepositionRotation = 1 << 1, // Update the actor rotation based on the repositioning node.
-    RepositionScale = 1 << 2, // [CURRENTLY UNSUPPORTED] Update the actor scale based on the repositioning node.
+/// Vertex attribute types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum VertexAttribute {
+    /// Vertex positions (always exist)
+    Positions = 0,
+    /// Vertex normals (always exist)
+    Normals = 1,
+    /// Vertex tangents (Vector4)
+    Tangents = 2,
+    /// UV coordinates
+    UvCoords = 3,
+    /// 32-bit vertex colors
+    Colors32 = 4,
+    /// Original vertex numbers (always exist)
+    OriginalVertexNumbers = 5,
+    /// 128-bit vertex colors
+    Colors128 = 6,
+    /// Vertex bitangents/binormals
+    Bitangents = 7,
 }
 
-/// The order of multiplication when composing a transformation matrix from a translation, rotation and scale.
-enum MultiplicationOrder {
-    ScaleRotationTranslation = 0, // LocalTM = scale * rotation * translation (Maya style).
-    RotationScaleTranslation = 1, // LocalTM = rotation * scale * translation (3DSMax style) [default].
+/// XAC-specific chunk identifiers
+pub mod xac_chunk_ids {
+    pub const NODE: u32 = 0;
+    pub const MESH: u32 = 1;
+    pub const SKINNING_INFO: u32 = 2;
+    pub const STD_MATERIAL: u32 = 3;
+    pub const STD_MATERIAL_LAYER: u32 = 4;
+    pub const FX_MATERIAL: u32 = 5;
+    pub const LIMIT: u32 = 6;
+    pub const INFO: u32 = 7;
+    pub const MESH_LOD_LEVELS: u32 = 8;
+    pub const STD_PROG_MORPH_TARGET: u32 = 9;
+    pub const NODE_GROUPS: u32 = 10;
+    pub const NODES: u32 = 11;
+    pub const STD_PMORPH_TARGETS: u32 = 12;
+    pub const MATERIAL_INFO: u32 = 13;
+    pub const NODE_MOTION_SOURCES: u32 = 14;
+    pub const ATTACHMENT_NODES: u32 = 15;
+    pub const XACFORCE32BIT: u32 = 0xFFFFFFFF;
 }
 
-enum LimitType {
-    TranslationX = 1 << 0, // Position limit on the x axis.
-    TranslationY = 1 << 1, // Position limit on the y axis.
-    TranslationZ = 1 << 2, // Position limit on the z axis.
-    RotationX = 1 << 3,    // Rotation limit on the x axis.
-    RotationY = 1 << 4,    // Rotation limit on the y axis.
-    RotationZ = 1 << 5,    // Rotation limit on the z axis.
-    ScaleX = 1 << 6,       // Scale limit on the x axis.
-    ScaleY = 1 << 7,       // Scale limit on the y axis.
-    ScaleZ = 1 << 8,       // Scale limit on the z axis.
-}
-
-enum XacAttribute {
-    AttribPositions = 0, // Vertex positions. Typecast to MCore::Vector3. Positions are always exist.
-    AttribNormals = 1,   // Vertex normals. Typecast to MCore::Vector3. Normals are always exist.
-    AttribTangents = 2,  // Vertex tangents. Typecast to <b> MCore::Vector4 </b>.
-    AttribUvcoords = 3,  // Vertex uv coordinates. Typecast to MCore::Vector2.
-    AttribColors32 = 4,  // Vertex colors in 32-bits. Typecast to uint32.
-    AttribOrgvtxnumbers = 5, // Original vertex numbers. Typecast to uint32. Original vertex numbers always exist.
-    AttribColors128 = 6,     // Vertex colors in 128-bits. Typecast to MCore::RGBAColor.
-    AttribBitangents = 7, // Vertex bitangents (aka binormal). Typecast to MCore::Vector3. When tangents exists bitangents may still not exist!
-}
-
-// collection of XAC chunk IDs
-enum XacChunk {
-    XacChunkNode = 0,
-    XacChunkMesh = 1,
-    XacChunkSkinninginfo = 2,
-    XacChunkStdmaterial = 3,
-    XacChunkStdmateriallayer = 4,
-    XacChunkFxmaterial = 5,
-    XacLimit = 6,
-    XacChunkInfo = 7,
-    XacChunkMeshlodlevels = 8,
-    XacChunkStdprogmorphtarget = 9,
-    XacChunkNodegroups = 10,
-    XacChunkNodes = 11,             // XAC_Nodes
-    XacChunkStdpmorphtargets = 12,  // XAC_PMorphTargets
-    XacChunkMaterialinfo = 13,      // XAC_MaterialInfo
-    XacChunkNodemotionsources = 14, // XAC_NodeMotionSources
-    XacChunkAttachmentnodes = 15,   // XAC_AttachmentNodes
-    XacForce32bit = 0xFFFFFFFF,
-}
-
-// material layer map types
-enum XacMaterialLayer {
-    XacLayeridUnknown = 0,       // unknown layer
-    XacLayeridAmbient = 1,       // ambient layer
-    XacLayeridDiffuse = 2,       // a diffuse layer
-    XacLayeridSpecular = 3,      // specular layer
-    XacLayeridOpacity = 4,       // opacity layer
-    XacLayeridBump = 5,          // bump layer
-    XacLayeridSelfillum = 6,     // self illumination layer
-    XacLayeridShine = 7,         // shininess (for specular)
-    XacLayeridShinestrength = 8, // shine strength (for specular)
-    XacLayeridFiltercolor = 9,   // filter color layer
-    XacLayeridReflect = 10,      // reflection layer
-    XacLayeridRefract = 11,      // refraction layer
-    XacLayeridEnvironment = 12,  // environment map layer
-    XacLayeridDisplacement = 13, // displacement map layer
-    XacLayeridForce8bit = 0xFF,  // don't use more than 8 bit values
+/// Material layer map types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LayerId {
+    Unknown = 0,
+    Ambient = 1,
+    Diffuse = 2,
+    Specular = 3,
+    Opacity = 4,
+    Bump = 5,
+    SelfIllum = 6,
+    Shine = 7,
+    ShineStrength = 8,
+    FilterColor = 9,
+    Reflect = 10,
+    Refract = 11,
+    Environment = 12,
+    Displacement = 13,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

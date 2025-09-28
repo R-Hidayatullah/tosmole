@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tera::{Context, Tera};
 
 use crate::category::Folder;
 use crate::ies::IESRoot;
@@ -57,6 +58,8 @@ pub async fn api_info(
     })
 }
 
+use std::collections::HashSet;
+
 /// -------------------------
 /// Shallow Folder Search
 /// -------------------------
@@ -66,10 +69,10 @@ pub struct ShallowSearchQuery {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ShallowSearchResponse<'a> {
-    pub folder_name: &'a str,
-    pub subfolders: Vec<&'a str>,
-    pub files: Vec<&'a str>,
+pub struct ShallowSearchResponse {
+    pub folder_name: String,
+    pub subfolders: Vec<String>,
+    pub files: Vec<String>,
 }
 
 #[get("/api/folder/shallow")]
@@ -78,10 +81,26 @@ pub async fn folder_shallow(
     folder_tree: web::Data<Arc<Folder>>,
 ) -> impl Responder {
     if let Some((subfolders, files)) = folder_tree.search_folder_shallow(&query.folder_name) {
+        // deduplicate subfolders
+        let subfolders: Vec<String> = subfolders
+            .iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .cloned()
+            .collect();
+
+        // deduplicate files
+        let files: Vec<String> = files
+            .iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .cloned()
+            .collect();
+
         HttpResponse::Ok().json(ShallowSearchResponse {
-            folder_name: &query.folder_name,
-            subfolders: subfolders.iter().map(|s| s.as_str()).collect(),
-            files: files.iter().map(|f| f.as_str()).collect(),
+            folder_name: query.folder_name.clone(),
+            subfolders,
+            files,
         })
     } else {
         HttpResponse::NotFound().body("Folder not found")
@@ -288,7 +307,8 @@ pub async fn preview_file(
                 HttpResponse::InternalServerError().body("Failed to parse IES file")
             }
         }
-        "xml" => {
+        "xml" | "skn" | "3dprop" | "3dworld" | "3drender" | "x" | "fx" | "sani" | "effect"
+        | "json" | "atlas" | "sprbin" | "xsd" => {
             let text = String::from_utf8_lossy(&data); // works for &[u8]
             HttpResponse::Ok()
                 .content_type("text/plain")

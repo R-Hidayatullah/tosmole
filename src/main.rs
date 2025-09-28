@@ -2,6 +2,7 @@
 
 use actix_web::{App, HttpServer, web};
 use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc};
+use tera::Tera;
 
 use category::Folder;
 
@@ -10,6 +11,8 @@ mod category;
 mod ies;
 mod ipf;
 mod tsv;
+mod web_data;
+mod xac;
 mod xml;
 
 #[actix_web::main]
@@ -80,6 +83,10 @@ async fn main() -> io::Result<()> {
     let folder_tree_data = web::Data::new(folder_tree);
     let game_root_data = web::Data::new(game_root);
 
+    // Initialize Tera
+    let tera = Tera::new("templates/**/*").expect("Failed to initialize Tera templates");
+    let tera_data = web::Data::new(tera);
+
     println!("Starting server at http://127.0.0.1:8080 ...\n");
     println!("Available endpoints:\n");
 
@@ -140,7 +147,9 @@ async fn main() -> io::Result<()> {
             .app_data(folder_tree_data.clone())
             .app_data(game_root_data.clone())
             .app_data(duplicates_data.clone())
+            .app_data(tera_data.clone()) // register Tera
             .configure(api::init_routes)
+            .service(web_data::index) // our template route
     })
     .bind(("127.0.0.1", 8080))?
     .run()

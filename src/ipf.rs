@@ -209,9 +209,7 @@ impl IPFRoot {
                 .to_string_lossy()
                 .to_lowercase();
 
-            if !f.directory_name.starts_with(&container_stem) {
-                f.directory_name = format!("{}/{}", container_stem, f.directory_name);
-            }
+            f.directory_name = format!("{}/{}", container_stem, f.directory_name);
         }
 
         Ok(root)

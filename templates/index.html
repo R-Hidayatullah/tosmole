@@ -819,16 +819,15 @@
                     </div>
                         <div class="stat-card">
                         <div class="stat-label">File Path</div>
-                        <div class="stat-value" style="font-size: 1rem;">${fileInfo.file_path.toString().toUpperCase()}</div>
+                        <div class="stat-value" style="font-size: 1rem;">${fileInfo.file_path.toString()}</div>
                     </div>
-
-                            <div class="mt-3">
-            <a href="/api/file/download?path=${encodeURIComponent(this.currentFile)}&version=${this.selectedVersion || 0}" 
-               class="btn btn-primary">
-                <i class="bi bi-download"></i>
-                Download File
-            </a>
-        </div>
+                    <div class="mt-3">
+                        <a href="/api/file/download?path=${encodeURIComponent(this.currentFile)}&version=${this.selectedVersion || 0}" 
+                        class="btn btn-primary">
+                        <i class="bi bi-download"></i>
+                            Download File
+                        </a>
+                    </div>
                 `;
             }
 
@@ -878,15 +877,17 @@
                     return;
                 }
 
-                // Sort the data by index_data
-                const sortedData = [...iesData.data].sort((a, b) => a.index_data - b.index_data);
+                let sortedColumn = [...iesData.columns].sort((a, b) => a.decl_idx - b.decl_idx);
+                sortedColumn = sortedColumn.sort((a, b) => a.type_data - b.type_data);
 
                 // Create table header from columns
-                const headers = iesData.columns.map(col => col.name || col.column).filter(name => name.trim());
+                const headers = sortedColumn.map(col => col.name || col.column).filter(name => name.trim());
+
                 let tableHTML = `
 <div class="ies-table">
     <div class="mb-3">
-        <h6 class="text-light mb-1">IES File: ${iesData.header.idspace}</h6>
+        <br>
+        <h4 class="text-center text-light">IES Filename : ${iesData.header.idspace}</h4>
         <small class="text-muted">
             Version: ${iesData.header.version} | 
             Fields: ${iesData.header.num_field} | 
@@ -912,7 +913,7 @@
 `;
 
                 // Add sorted data rows
-                sortedData.forEach((row, index) => {
+                iesData.data.forEach((row, index) => {
                     tableHTML += `<tr><td>${row.index_data}</td>`;
 
                     // Add row text data

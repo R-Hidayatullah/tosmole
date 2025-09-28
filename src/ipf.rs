@@ -206,8 +206,7 @@ impl IPFRoot {
             let container_stem = Path::new(&f.container_name)
                 .file_stem()
                 .unwrap()
-                .to_string_lossy()
-                .to_lowercase();
+                .to_string_lossy();
 
             f.directory_name = format!("{}/{}", container_stem, f.directory_name);
         }
@@ -302,11 +301,6 @@ pub fn collect_file_tables_from_parsed(parsed_ipfs: &mut Vec<IPFRoot>) -> Vec<IP
     all_file_table
 }
 
-/// Normalize filename for sorting: lowercase and remove leading underscores
-fn normalize_filename(name: &str) -> String {
-    name.trim_start_matches('_').to_lowercase()
-}
-
 /// Sorts IPF files: folder first, then human-friendly filename order
 pub fn sort_file_tables_by_folder_then_name(file_tables: &mut Vec<IPFFileTable>) {
     file_tables.sort_by(|a, b| {
@@ -320,8 +314,8 @@ pub fn sort_file_tables_by_folder_then_name(file_tables: &mut Vec<IPFFileTable>)
         }
 
         // Then compare normalized filenames
-        let name_a = normalize_filename(path_a.file_name().unwrap().to_str().unwrap());
-        let name_b = normalize_filename(path_b.file_name().unwrap().to_str().unwrap());
+        let name_a = path_a.file_name().unwrap().to_str().unwrap();
+        let name_b = path_b.file_name().unwrap().to_str().unwrap();
 
         name_a.cmp(&name_b)
     });

@@ -1,8 +1,9 @@
 use std::{fs::File, io::BufReader, path::Path};
 
 use quick_xml::{Reader, events::Event};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DuplicateEntry {
     pub source: String,
     pub targets: Vec<String>,

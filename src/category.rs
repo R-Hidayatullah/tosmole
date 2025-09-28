@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
 use crate::ipf::IPFFileTable;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Folder {
     pub files: Vec<IPFFileTable>,
     pub subfolders: BTreeMap<String, Folder>,
@@ -79,16 +81,40 @@ impl Folder {
     }
 
     /// Shallow search for a folder: returns subfolder names and files directly inside it
-    pub fn search_folder_shallow(&self, folder_name: &str) -> Option<(Vec<String>, Vec<String>)> {
-        self.subfolders.get(folder_name).map(|folder| {
-            let subfolders: Vec<String> = folder.subfolders.keys().cloned().collect();
-            let files: Vec<String> = folder
+    pub fn search_folder_shallow(&self, folder_path: &str) -> Option<(Vec<String>, Vec<String>)> {
+        // Normalize path: remove trailing slash
+        let path = folder_path.trim_end_matches('/');
+
+        if path.is_empty() {
+            // Return root folder content
+            let subfolders: Vec<String> = self.subfolders.keys().cloned().collect();
+            let files: Vec<String> = self
                 .files
                 .iter()
-                .map(|f| format!("{}/{}", folder_name, f.directory_name))
+                .map(|f| f.directory_name.clone())
                 .collect();
-            (subfolders, files)
-        })
+            return Some((subfolders, files));
+        }
+
+        // Traverse the path parts
+        let mut current = self;
+        for part in path.split('/') {
+            if let Some(subfolder) = current.subfolders.get(part) {
+                current = subfolder;
+            } else {
+                return None; // folder not found
+            }
+        }
+
+        // Collect shallow content of the target folder
+        let subfolders: Vec<String> = current.subfolders.keys().cloned().collect();
+        let files: Vec<String> = current
+            .files
+            .iter()
+            .map(|f| f.directory_name.clone())
+            .collect();
+
+        Some((subfolders, files))
     }
 
     /// Recursive search for files matching `file_name`, returns full path and reference

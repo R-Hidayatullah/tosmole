@@ -1,123 +1,134 @@
 #![allow(unused)]
 
-use ipf::IPFRoot;
-use std::{collections::BTreeMap, io, path::Path};
+use actix_web::{App, HttpServer, web};
+use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc};
 
-use crate::ipf::IPFFileTable;
+use category::Folder;
 
+mod api;
 mod category;
 mod ies;
 mod ipf;
 mod tsv;
 mod xml;
 
-fn main() -> io::Result<()> {
-    let game_root = Path::new(r"/home/ridwan/Documents/TreeOfSaviorCN/");
+#[actix_web::main]
+async fn main() -> io::Result<()> {
+    // ---------------------------
+    // Paths
+    // ---------------------------
+    let game_root = PathBuf::from("/home/ridwan/Documents/TreeOfSaviorCN/");
     let lang_folder =
-        Path::new(r"/home/ridwan/Documents/TreeOfSaviorCN/release/languageData/English");
+        PathBuf::from("/home/ridwan/Documents/TreeOfSaviorCN/release/languageData/English");
 
-    // Timer for parsing IPFs
-    let start_total = std::time::Instant::now();
-    let start = std::time::Instant::now();
-    let mut parsed_ipfs = ipf::parse_game_ipfs(game_root)?;
-    let duration = start.elapsed();
-    println!(
-        "Parsed total {} IPF archives from both 'data' and 'patch' in {:.2?}",
-        parsed_ipfs.len(),
-        duration,
-    );
+    // ---------------------------
+    // Parse IPF Archives
+    // ---------------------------
+    println!("Parsing IPF archives...");
+    let mut parsed_ipfs = ipf::parse_game_ipfs(&game_root)?;
+    println!("Parsed {} IPF archives", parsed_ipfs.len());
 
-    // Timer for extracting a sample file
-    let start = std::time::Instant::now();
-    let data = parsed_ipfs
-        .get(0)
-        .unwrap()
-        .file_table
-        .get(0)
-        .unwrap()
-        .extract_data()?;
-    println!("Extracted sample data in {:.2?}", start.elapsed());
-
-    // Timer for collecting and sorting all files
-    let start = std::time::Instant::now();
     let mut all_files = ipf::collect_file_tables_from_parsed(&mut parsed_ipfs);
     ipf::sort_file_tables_by_folder_then_name(&mut all_files);
-    println!(
-        "Collected and sorted {} files in {:.2?}",
-        all_files.len(),
-        start.elapsed()
-    );
 
-    // Timer for parsing language data
-    let start = std::time::Instant::now();
-    let (etc_data, item_data) = tsv::parse_language_data(lang_folder)?;
-    println!(
-        "Parsed language data (ETC: {}, ITEM: {}) in {:.2?}",
-        etc_data.len(),
-        item_data.len(),
-        start.elapsed()
-    );
-
-    // Timer for building folder tree
-    let start = std::time::Instant::now();
-    let grouped: BTreeMap<String, Vec<IPFFileTable>> =
+    let grouped: BTreeMap<String, Vec<ipf::IPFFileTable>> =
         ipf::group_file_tables_by_directory(all_files);
-    let result = category::build_tree(grouped);
-    println!("Built folder tree in {:.2?}", start.elapsed());
 
-    // Timer for shallow folder search
-    let start = std::time::Instant::now();
-    if let Some((subfolders, files)) = result.search_folder_shallow("ui") {
-        println!("Folder 'ui' subfolders: {:?}", subfolders);
-        println!("Folder 'ui' files: {:?}", files);
-    }
-    println!("Shallow folder search in {:.2?}", start.elapsed());
+    let folder_tree = Arc::new(category::build_tree(grouped));
 
-    // Timer for recursive file search
-    let start = std::time::Instant::now();
-    let matches = result.search_file_recursive("R1.txt", "");
-    for (full_path, file) in matches {
-        println!("Found file: {} ({:?})", full_path, file.file_path);
-    }
-    println!("Recursive file search in {:.2?}", start.elapsed());
+    // ---------------------------
+    // Parse Language Data
+    // ---------------------------
+    println!("Parsing language data...");
+    let (_etc_data, _item_data) = tsv::parse_language_data(&lang_folder)?;
+    println!("Parsed language data.");
 
-    // Timer for full-path file search
-    let start = std::time::Instant::now();
-    let matches = result.search_file_by_full_path("ui/brush/spraycursor_1.tga");
-    for (full_path, file) in matches {
-        println!("Found file: {} ({:?})", full_path, file.file_path);
-    }
-    println!("Full-path file search in {:.2?}", start.elapsed());
+    // ---------------------------
+    // Parse Duplicates
+    // ---------------------------
+    println!("Parsing duplicates...");
 
-    // Timer for hex view
-    let start = std::time::Instant::now();
-    ipf::print_hex_viewer(&data);
-    println!("Printed hex viewer in {:.2?}", start.elapsed());
+    let xac_duplicates = Arc::new(xml::parse_duplicates_xml(
+        &game_root.join("release/xac_duplicates.xml"),
+    )?);
+    let xsm_duplicates = Arc::new(xml::parse_duplicates_xml(
+        &game_root.join("release/xsm_duplicates.xml"),
+    )?);
+    let xsmtime_duplicates = Arc::new(xml::parse_duplicates_xml(
+        &game_root.join("release/xsmtime_duplicates.xml"),
+    )?);
+    let xpm_duplicates = Arc::new(xml::parse_duplicates_xml(
+        &game_root.join("release/xpm_duplicates.xml"),
+    )?);
+    let dds_duplicates = Arc::new(xml::parse_duplicates_xml(
+        &game_root.join("release/dds_duplicates.xml"),
+    )?);
 
-    // Timer for parsing duplicates
-    let start = std::time::Instant::now();
-    let xac_duplicates =
-        xml::parse_duplicates_xml(&game_root.join("release").join("xac_duplicates.xml"))?;
-    let xsm_duplicates =
-        xml::parse_duplicates_xml(&game_root.join("release").join("xsm_duplicates.xml"))?;
-    let dds_duplicates =
-        xml::parse_duplicates_xml(&game_root.join("release").join("dds_duplicates.xml"))?;
-    let xpm_duplicates =
-        xml::parse_duplicates_xml(&game_root.join("release").join("xpm_duplicates.xml"))?;
-    let xsmtime_duplicates =
-        xml::parse_duplicates_xml(&game_root.join("release").join("xsmtime_duplicates.xml"))?;
-    println!("Parsed duplicates in {:.2?}", start.elapsed());
+    println!("Parsed duplicates.");
 
+    let duplicates_data = web::Data::new(api::Duplicates {
+        xac: xac_duplicates,
+        xsm: xsm_duplicates,
+        xsmtime: xsmtime_duplicates,
+        xpm: xpm_duplicates,
+        dds: dds_duplicates,
+    });
+
+    // ---------------------------
+    // Start Actix Web Server
+    // ---------------------------
+    let folder_tree_data = web::Data::new(folder_tree);
+    let game_root_data = web::Data::new(game_root);
+
+    println!("Starting server at http://127.0.0.1:8080 ...\n");
+    println!("Available endpoints:\n");
+
+    println!("1. GET /api/info");
+    println!("   Usage: curl http://127.0.0.1:8080/api/info");
+    println!("   Description: Returns game root info and duplicate counts.\n");
+
+    println!("2. GET /api/folder/shallow?folder_name=<folder>");
+    println!("   Usage: curl \"http://127.0.0.1:8080/api/folder/shallow?folder_name=ui/brush\"");
     println!(
-        "XAC duplicates: {}, XSM: {}, DDS: {}, XPM: {}, XSMTIME: {}",
-        xac_duplicates.len(),
-        xsm_duplicates.len(),
-        dds_duplicates.len(),
-        xpm_duplicates.len(),
-        xsmtime_duplicates.len()
+        "   Description: Returns subfolders and files directly inside the specified folder.\n"
     );
-    println!("XAC data : {:?}", xac_duplicates.get(0).unwrap());
 
-    println!("Total program time: {:.2?}", start_total.elapsed());
-    Ok(())
+    println!("3. GET /api/file/search?file_name=<file>");
+    println!("   Usage: curl \"http://127.0.0.1:8080/api/file/search?file_name=R1.txt\"");
+    println!(
+        "   Description: Recursively searches for files by name and returns all matches with version indices.\n"
+    );
+
+    println!("4. GET /api/file/fullpath?full_path=<file>");
+    println!("   Usage: curl \"http://127.0.0.1:8080/api/file/fullpath?full_path=ies/actor.ies\"");
+    println!(
+        "   Description: Search for a file by exact path, returns all available versions with version index.\n"
+    );
+
+    println!("5. GET /api/file/download?path=<file>&version=<index>");
+    println!(
+        "   Usage: curl -O \"http://127.0.0.1:8080/api/file/download?path=ies/actor.ies&version=0\""
+    );
+    println!(
+        "   Description: Download the raw file. Optionally specify a version (default is 0).\n"
+    );
+
+    println!("6. GET /api/file/parse?path=<file>&version=<index>");
+    println!(
+        "   Usage: curl \"http://127.0.0.1:8080/api/file/parse?path=ies/actor.ies&version=0\""
+    );
+    println!(
+        "   Description: Parse the file as an IES (lighting profile). Optionally specify a version (default is 0).\n"
+    );
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(folder_tree_data.clone())
+            .app_data(game_root_data.clone())
+            .app_data(duplicates_data.clone())
+            .configure(api::init_routes)
+    })
+    .bind(("127.0.0.1", 8080))?
+    .run()
+    .await
 }

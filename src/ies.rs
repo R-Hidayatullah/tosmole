@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{self, BufReader},
+    io::{self, BufReader, Cursor},
     path::Path,
 };
 
@@ -124,6 +124,17 @@ impl IESRoot {
 
         Ok(root)
     }
+
+    /// Read IESRoot from a byte slice in memory
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        let mut cursor = Cursor::new(bytes);
+
+        let root: IESRoot = cursor
+            .read_le()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("binrw error: {}", e)))?;
+
+        Ok(root)
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +162,21 @@ mod tests {
             !root.header.idspace.is_empty(),
             "Header idspace should not be empty"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_ies_from_memory() -> io::Result<()> {
+        // Load file into memory first
+        let data = std::fs::read("tests/cell.ies")?;
+
+        // Parse from memory instead of directly from file
+        let root = IESRoot::from_bytes(&data)?;
+
+        println!("Header: {:?}", root.header);
+        assert!(!root.columns.is_empty());
+        assert!(!root.data.is_empty());
 
         Ok(())
     }

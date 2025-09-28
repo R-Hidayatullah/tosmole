@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Explorer</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css"
+        rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .main-container {
+            height: 100vh;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            margin: 10px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .panel {
+            height: calc(100vh - 20px);
+            border-radius: 15px;
+            margin: 10px 5px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            background: white;
+        }
+
+        .left-panel {
+            background: linear-gradient(145deg, #f8f9ff, #e8ecf7);
+            border-right: 2px solid #e9ecef;
+        }
+
+        .middle-panel {
+            background: #fafbfc;
+        }
+
+        .right-panel {
+            background: linear-gradient(145deg, #fff5f5, #fef7f0);
+            border-left: 2px solid #e9ecef;
+        }
+
+        .panel-header {
+            background: linear-gradient(135deg, #6c63ff, #5a52d8);
+            color: white;
+            padding: 15px 20px;
+            font-weight: 600;
+            border-radius: 15px 15px 0 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .tree-item {
+            padding: 8px 15px;
+            cursor: pointer;
+            border-radius: 8px;
+            margin: 2px 5px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tree-item:hover {
+            background: linear-gradient(135deg, #6c63ff20, #5a52d820);
+            transform: translateX(5px);
+        }
+
+        .tree-item.active {
+            background: linear-gradient(135deg, #6c63ff, #5a52d8);
+            color: white;
+            box-shadow: 0 5px 15px rgba(108, 99, 255, 0.3);
+        }
+
+        .folder-icon {
+            color: #ffc107;
+        }
+
+        .file-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        .preview-container {
+            height: calc(100% - 70px);
+            overflow: auto;
+            padding: 20px;
+        }
+
+        .code-preview {
+            background: #2d3748;
+            border-radius: 10px;
+            padding: 20px;
+            color: #e2e8f0;
+            font-family: 'Fira Code', monospace;
+            line-height: 1.5;
+            overflow-x: auto;
+        }
+
+        .image-preview {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .image-preview img {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+        }
+
+        .model-3d {
+            background: linear-gradient(45deg, #1a1a2e, #16213e);
+            border-radius: 15px;
+            height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        .table-preview {
+            overflow-x: auto;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .info-value {
+            color: #6c757d;
+            text-align: right;
+        }
+
+        .file-type-js {
+            color: #f7df1e;
+        }
+
+        .file-type-html {
+            color: #e34f26;
+        }
+
+        .file-type-css {
+            color: #1572b6;
+        }
+
+        .file-type-json {
+            color: #000000;
+        }
+
+        .file-type-md {
+            color: #083fa1;
+        }
+
+        .file-type-txt {
+            color: #6c757d;
+        }
+
+        .file-type-img {
+            color: #ff6b6b;
+        }
+
+        .file-type-3d {
+            color: #4ecdc4;
+        }
+
+        .file-type-csv {
+            color: #28a745;
+        }
+
+        .nested {
+            margin-left: 20px;
+        }
+
+        .binary-preview {
+            background: #1a1a1a;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            border-radius: 10px;
+            line-height: 1.4;
+        }
+
+        .hex-offset {
+            color: #666;
+            margin-right: 20px;
+        }
+
+        .hex-data {
+            color: #00ff00;
+            margin-right: 20px;
+        }
+
+        .ascii-data {
+            color: #ffff00;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-container">
+        <div class="row h-100 g-0">
+            <!-- Left Panel - File Tree -->
+            <div class="col-3">
+                <div class="panel left-panel">
+                    <div class="panel-header">
+                        <i class="bi bi-folder2-open me-2"></i>
+                        File Explorer
+                    </div>
+                    <div class="p-3">
+                        <div class="tree-item" onclick="selectFile('project', 'folder')">
+                            <i class="bi bi-folder-fill folder-icon"></i>
+                            <span>My Project</span>
+                        </div>
+                        <div class="nested">
+                            <div class="tree-item" onclick="selectFile('src', 'folder')">
+                                <i class="bi bi-folder folder-icon"></i>
+                                <span>src</span>
+                            </div>
+                            <div class="nested">
+                                <div class="tree-item" onclick="selectFile('main.cpp', 'c++')">
+                                    <i class="bi bi-filetype-txt file-type-txt"></i>
+                                    <span>main.cpp</span>
+                                </div>
+                                <div class="tree-item" onclick="selectFile('utils.cpp', 'c++')">
+                                    <i class="bi bi-filetype-txt file-type-txt"></i>
+                                    <span>utils.cpp</span>
+                                </div>
+                                <div class="tree-item" onclick="selectFile('math.hpp', 'c++')">
+                                    <i class="bi bi-filetype-txt file-type-txt"></i>
+                                    <span>math.hpp</span>
+                                </div>
+                            </div>
+
+                            <div class="tree-item" onclick="selectFile('assets', 'folder')">
+                                <i class="bi bi-folder folder-icon"></i>
+                                <span>assets</span>
+                            </div>
+                            <div class="nested">
+                                <div class="tree-item" onclick="selectFile('logo.png', 'image')">
+                                    <i class="bi bi-image file-type-img"></i>
+                                    <span>logo.png</span>
+                                </div>
+                            </div>
+
+                            <div class="tree-item" onclick="selectFile('data.csv', 'table')">
+                                <i class="bi bi-table file-type-csv"></i>
+                                <span>data.csv</span>
+                            </div>
+
+                            <div class="tree-item" onclick="selectFile('config.json', 'json')">
+                                <i class="bi bi-filetype-json file-type-json"></i>
+                                <span>config.json</span>
+                            </div>
+
+                            <div class="tree-item" onclick="selectFile('readme.md', 'markdown')">
+                                <i class="bi bi-markdown file-type-md"></i>
+                                <span>README.md</span>
+                            </div>
+
+                            <div class="tree-item" onclick="selectFile('binary.exe', 'binary')">
+                                <i class="bi bi-file-binary file-type-txt"></i>
+                                <span>binary.exe</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Middle Panel - Preview -->
+            <div class="col-6">
+                <div class="panel middle-panel">
+                    <div class="panel-header">
+                        <i class="bi bi-eye me-2"></i>
+                        <span id="preview-title">File Preview</span>
+                    </div>
+                    <div class="preview-container" id="preview-container">
+                        <div class="text-center text-muted mt-5">
+                            <i class="bi bi-file-earmark display-1"></i>
+                            <p class="mt-3">Select a file to preview</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel - Information -->
+            <div class="col-3">
+                <div class="panel right-panel">
+                    <div class="panel-header">
+                        <i class="bi bi-info-circle me-2"></i>
+                        File Information
+                    </div>
+                    <div class="p-3" id="info-container">
+                        <div class="text-center text-muted mt-5">
+                            <i class="bi bi-info-square display-4"></i>
+                            <p class="mt-3">Select a file to view details</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+
+    <script>
+        const fileData = {
+            'main.cpp': {
+                type: 'cpp',
+                size: '1.5 KB',
+                modified: '2024-01-15 10:00:00',
+                content: "#include <iostream>\n\nint main() {\n    std::cout << \"Hello, World!\" << std::endl;\n    return 0;\n}",
+                description: 'Simple C++ program printing Hello World.'
+            },
+            'utils.cpp': {
+                type: 'cpp',
+                size: '2.0 KB',
+                modified: '2024-01-14 14:20:00',
+                content: "#include <vector>\n#include <algorithm>\n\nvoid printVector(const std::vector<int>& v) {\n    for(auto n : v) std::cout << n << ' ';\n    std::cout << std::endl;\n}",
+                description: 'Utility functions for C++ projects.'
+            },
+            'math.hpp': {
+                type: 'cpp',
+                size: '1.2 KB',
+                modified: '2024-01-13 16:00:00',
+                content: "#pragma once\n\nint add(int a, int b);\nint multiply(int a, int b);",
+                description: 'Header file declaring basic math functions.'
+            },
+            'config.json': {
+                type: 'json',
+                size: '0.5 KB',
+                modified: '2024-01-12 09:22:45',
+                content: "{\"project\": \"cpp-sample\", \"version\": \"1.0.0\", \"author\": \"Developer\"}",
+                description: 'JSON configuration file containing project metadata.'
+            },
+            'readme.md': {
+                type: 'markdown',
+                size: '1.2 KB',
+                modified: '2024-01-11 11:30:15',
+                content: "# C++ Sample Project\n\nThis project demonstrates basic C++ source files and utilities.\n\n## Files\n- main.cpp: Entry point\n- utils.cpp: Helper functions\n- math.hpp: Math header\n\n## Build\n```bash\ng++ main.cpp utils.cpp -o app\n./app\n```",
+                description: 'Markdown documentation with instructions for building the C++ project.'
+            },
+            'logo.png': {
+                type: 'image',
+                size: '45.2 KB',
+                modified: '2024-01-10 14:20:18',
+                content: 'https://placehold.co/400x200/6c63ff/ffffff?text=Placeholder+Logo',
+                description: 'Placeholder logo image.'
+            },
+
+            'data.csv': {
+                type: 'table',
+                size: '156 KB',
+                modified: '2024-01-08 15:45:30',
+                content: [
+                    ['Name', 'Age', 'City', 'Salary', 'Department'],
+                    ['John Doe', '28', 'New York', '$65,000', 'Engineering'],
+                    ['Jane Smith', '32', 'Los Angeles', '$72,000', 'Marketing'],
+                    ['Mike Johnson', '25', 'Chicago', '$58,000', 'Sales'],
+                    ['Sarah Wilson', '29', 'Boston', '$69,000', 'Engineering'],
+                    ['Tom Brown', '35', 'Seattle', '$78,000', 'Management'],
+                    ['Lisa Davis', '27', 'Miami', '$61,000', 'Design'],
+                    ['James Miller', '31', 'Denver', '$67,000', 'Marketing'],
+                    ['Emily Taylor', '26', 'Portland', '$59,000', 'Sales']
+                ],
+                description: 'CSV data file containing employee information and statistics.'
+            },
+            'binary.exe': {
+                type: 'binary',
+                size: '1.2 MB',
+                modified: '2024-01-07 12:30:45',
+                content: 'binary-data',
+                description: 'Compiled executable binary file for Windows systems.'
+            }
+        };
+
+
+
+        function selectFile(fileName, fileType) {
+            // Remove active class from all tree items
+            document.querySelectorAll('.tree-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            // Add active class to clicked item
+            event.target.closest('.tree-item').classList.add('active');
+
+            // Update preview title
+            document.getElementById('preview-title').textContent = fileName;
+
+            const file = fileData[fileName];
+            if (!file) {
+                showFolderPreview(fileName);
+                return;
+            }
+
+            updatePreview(fileName, file);
+            updateInfo(fileName, file);
+        }
+
+        function showFolderPreview(folderName) {
+            const previewContainer = document.getElementById('preview-container');
+            previewContainer.innerHTML = `
+<div class="text-center mt-5">
+    <i class="bi bi-folder-fill display-1 text-warning"></i>
+    <h3 class="mt-3">${folderName}</h3>
+    <p class="text-muted">This is a folder. Select a file to preview its content.</p>
+</div>
+`;
+
+            const infoContainer = document.getElementById('info-container');
+            infoContainer.innerHTML = `
+<div class="info-item">
+    <span class="info-label">Type:</span>
+    <span class="info-value">Folder</span>
+</div>
+<div class="info-item">
+    <span class="info-label">Items:</span>
+    <span class="info-value">Multiple</span>
+</div>
+<div class="info-item">
+    <span class="info-label">Modified:</span>
+    <span class="info-value">2024-01-15</span>
+</div>
+`;
+        }
+
+        function updatePreview(fileName, file) {
+            const previewContainer = document.getElementById('preview-container');
+
+            switch (file.type) {
+                // Common web formats
+                case 'javascript':
+                case 'html':
+                case 'css':
+                case 'json':
+                    previewContainer.innerHTML = `
+<pre><code class="language-${file.type === 'javascript' ? 'js' : file.type}">${escapeHtml(file.content)}</code></pre>
+`;
+                    Prism.highlightAll();
+                    break;
+
+                // C, C++ and header files
+                case 'c++':
+                case 'cpp':
+                case 'c':
+                case 'h':
+                case 'hpp':
+                    previewContainer.innerHTML = `
+<pre><code class="language-cpp">${escapeHtml(file.content)}</code></pre>
+`;
+                    Prism.highlightAll();
+                    break;
+
+                // Lua scripts
+                case 'lua':
+                    previewContainer.innerHTML = `
+<pre><code class="language-lua">${escapeHtml(file.content)}</code></pre>
+`;
+                    Prism.highlightAll();
+                    break;
+
+                // XML files
+                case 'xml':
+                    previewContainer.innerHTML = `
+<pre><code class="language-markup">${escapeHtml(file.content)}</code></pre>
+`;
+                    Prism.highlightAll();
+                    break;
+
+                // YAML / YML files
+                case 'yaml':
+                case 'yml':
+                    previewContainer.innerHTML = `
+<pre><code class="language-yaml">${escapeHtml(file.content)}</code></pre>
+`;
+                    Prism.highlightAll();
+                    break;
+
+                // Markdown
+                case 'markdown':
+                    previewContainer.innerHTML = `
+<div class="code-preview">
+    <pre>${escapeHtml(file.content)}</pre>
+</div>
+`;
+                    break;
+
+                // Images
+                case 'image':
+                    previewContainer.innerHTML = `
+<div class="image-preview">
+    <img src="${file.content}" alt="${fileName}" class="img-fluid">
+    <p class="mt-3 text-muted">Image Preview: ${fileName}</p>
+</div>
+`;
+                    break;
+
+                // 3D models
+                case '3d':
+                    previewContainer.innerHTML = `
+<div class="model-3d">
+    <div class="text-center">
+        <i class="bi bi-box display-1 mb-3"></i>
+        <h4>3D Model Viewer</h4>
+        <p>Model: ${fileName}</p>
+        <small class="text-muted">3D preview would be rendered here</small>
+    </div>
+</div>
+`;
+                    break;
+
+                // Table / CSV
+                case 'table':
+                    const tableHtml = generateTable(file.content);
+                    previewContainer.innerHTML = `
+<div class="table-preview">
+    ${tableHtml}
+</div>
+`;
+                    break;
+
+                // Binary
+                case 'binary':
+                    previewContainer.innerHTML = `
+<div class="binary-preview">
+    <div class="mb-3">
+        <strong>Binary File: ${fileName}</strong>
+    </div>
+    ${generateCleanRandomHexDump()}
+</div>
+`;
+                    break;
+
+                // Default fallback
+                default:
+                    previewContainer.innerHTML = `
+<div class="text-center mt-5">
+    <i class="bi bi-file-earmark-text display-1 text-secondary"></i>
+    <h4 class="mt-3">File Preview</h4>
+    <p class="text-muted">Preview not available for this file type</p>
+</div>
+`;
+            }
+        }
+
+
+        function updateInfo(fileName, file) {
+            const infoContainer = document.getElementById('info-container');
+            infoContainer.innerHTML = `
+<div class="info-item">
+    <span class="info-label">Name:</span>
+    <span class="info-value">${fileName}</span>
+</div>
+<div class="info-item">
+    <span class="info-label">Type:</span>
+    <span class="info-value">${file.type.toUpperCase()}</span>
+</div>
+<div class="info-item">
+    <span class="info-label">Size:</span>
+    <span class="info-value">${file.size}</span>
+</div>
+<div class="info-item">
+    <span class="info-label">Modified:</span>
+    <span class="info-value">${file.modified}</span>
+</div>
+<div class="mt-4">
+    <h6 class="mb-3">Description</h6>
+    <p class="small text-muted">${file.description}</p>
+</div>
+`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function generateTable(data) {
+            if (!Array.isArray(data) || data.length === 0) return '';
+
+            const headers = data[0];
+            const rows = data.slice(1);
+
+            let html = `<table class="table table-striped table-hover">`;
+
+            // Header
+            html += `<thead class="table-dark"><tr>`;
+            headers.forEach(header => {
+                html += `<th>${header}</th>`;
+            });
+            html += `</tr></thead>`;
+
+            // Body
+            html += `<tbody>`;
+            rows.forEach(row => {
+                html += `<tr>`;
+                row.forEach(cell => {
+                    html += `<td>${cell}</td>`;
+                });
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+
+            return html;
+        }
+
+
+        function generateHexDump() {
+            const hexData = [
+                '00000000 4D 5A 90 00 03 00 00 00 04 00 00 00 FF FF 00 00 |MZ..............|',
+                '00000010 B8 00 00 00 00 00 00 00 40 00 00 00 00 00 00 00 |........@.......|',
+                '00000020 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |................|',
+                '00000030 00 00 00 00 00 00 00 00 00 00 00 00 E0 00 00 00 |................|',
+                '00000040 0E 1F BA 0E 00 B4 09 CD 21 B8 01 4C CD 21 54 68 |........!..L.!Th|',
+                '00000050 69 73 20 70 72 6F 67 72 61 6D 20 63 61 6E 6E 6F |is program canno|',
+                '00000060 74 20 62 65 20 72 75 6E 20 69 6E 20 44 4F 53 20 |t be run in DOS |',
+                '00000070 6D 6F 64 65 2E 0D 0D 0A 24 00 00 00 00 00 00 00 |mode....$.......|'
+            ];
+
+            return hexData.map(line => `<div>${line}</div>`).join('');
+        }
+
+        function generateCleanRandomHexDump(size = 1024 * 50) {
+            const bytes = new Uint8Array(size);
+            crypto.getRandomValues(bytes); // random binary bytes
+            const lines = [];
+            const rowSize = 16;
+
+            function escapeHtml(str) {
+                return str.replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+            }
+
+            for (let i = 0; i < bytes.length; i += rowSize) {
+                const rowBytes = bytes.slice(i, i + rowSize);
+
+                // Address
+                const address = i.toString(16).padStart(8, '0');
+
+                // Hex part: two-digit uppercase
+                const hexParts = Array.from(rowBytes, b => b.toString(16).toUpperCase().padStart(2, '0'));
+
+                // Extra space after 8 bytes for readability
+                const hex = hexParts.map((h, idx) => (idx === 8 ? ' ' + h : h)).join(' ');
+
+                // Pad hex so ASCII column aligns
+                const hexPadded = hex.padEnd(rowSize * 3 + 1, ' ');
+
+                // ASCII part: printable chars 32–126, else .
+                const ascii = Array.from(rowBytes, b => {
+                    if (b >= 32 && b <= 126) return String.fromCharCode(b);
+                    return '.';
+                }).join('');
+
+                // Escape HTML for safe rendering
+                const asciiEscaped = escapeHtml(ascii);
+
+                // Add line
+                lines.push(`${address} ${hexPadded} |${asciiEscaped}|`);
+            }
+
+            // Wrap each line in <div> for HTML
+            return lines.map(line => `<div>${line}</div>`).join('');
+        }
+
+    </script>
+</body>
+
+</html>

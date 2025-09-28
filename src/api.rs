@@ -10,6 +10,7 @@ use tera::{Context, Tera};
 use crate::category::Folder;
 use crate::ies::IESRoot;
 use crate::ipf::IPFFileTable;
+use crate::xac::XACRoot;
 use crate::xml::{self, DuplicateEntry};
 
 /// -------------------------
@@ -322,6 +323,12 @@ pub async fn preview_file(
         "ies" => match IESRoot::from_bytes(&data) {
             Ok(ies) => HttpResponse::Ok().json(ies),
             Err(_) => HttpResponse::InternalServerError().body("Failed to parse IES file"),
+        },
+
+        // XAC format
+        "xac" => match XACRoot::from_bytes(&data) {
+            Ok(xac) => HttpResponse::Ok().json(xac),
+            Err(_) => HttpResponse::InternalServerError().body("Failed to parse XAC file"),
         },
 
         // Text-like formats

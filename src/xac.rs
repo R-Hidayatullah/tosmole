@@ -1336,18 +1336,13 @@ mod tests {
 
     #[test]
     fn test_read_xac_from_memory() -> io::Result<()> {
-        // Load file into memory
+        // Load file into memory first
         let data = std::fs::read("tests/archer_m_falconer01.xac")?;
 
-        // Parse from memory
+        // Parse from memory instead of directly from file
         let root = XACRoot::from_bytes(&data)?;
 
-        // Save to JSON
-        let file = File::create("tests/archer_m_falconer01.json")?;
-        let writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, &root)?; // pretty-printed JSON
-
-        println!("Saved XACRoot to tests/archer_m_falconer01.json");
+        println!("Header: {:?}", root.header);
 
         Ok(())
     }

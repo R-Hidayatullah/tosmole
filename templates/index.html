@@ -110,6 +110,12 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            white-space: normal;
+            /* allow wrapping */
+            word-break: break-word;
+            /* break long words if needed */
+            overflow-wrap: break-word;
+            /* fallback for older browsers */
         }
 
         .tree-item:hover {
@@ -872,6 +878,9 @@
                     return;
                 }
 
+                // Sort the data by index_data
+                const sortedData = [...iesData.data].sort((a, b) => a.index_data - b.index_data);
+
                 // Create table header from columns
                 const headers = iesData.columns.map(col => col.name || col.column).filter(name => name.trim());
                 let tableHTML = `
@@ -902,9 +911,8 @@
             <tbody>
 `;
 
-
-                // Add data rows
-                iesData.data.forEach((row, index) => {
+                // Add sorted data rows
+                sortedData.forEach((row, index) => {
                     tableHTML += `<tr><td>${row.index_data}</td>`;
 
                     // Add row text data
@@ -930,10 +938,11 @@
                 });
 
                 tableHTML += `
-                            </tbody>
-                        </table>
-                    </div>
-                `;
+            </tbody>
+        </table>
+    </div>
+</div>
+`;
 
                 previewContent.innerHTML = tableHTML;
             }

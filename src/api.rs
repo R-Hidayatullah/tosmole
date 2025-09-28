@@ -1,6 +1,5 @@
 use actix_files::NamedFile;
 use actix_web::{HttpResponse, Responder, get, web};
-use image::ImageReader;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -284,6 +283,7 @@ pub async fn preview_file(
     query: web::Query<FilePreviewQuery>,
     folder_tree: web::Data<Arc<Folder>>,
 ) -> impl Responder {
+    // Find file by full path
     let results = folder_tree.search_file_by_full_path(&query.path);
     let version = query.version.unwrap_or(0);
 
@@ -292,32 +292,31 @@ pub async fn preview_file(
         None => return HttpResponse::NotFound().body("File/version not found"),
     };
 
+    // Extract raw file bytes
     let data = match file_table.extract_data() {
         Ok(d) => d,
         Err(_) => return HttpResponse::InternalServerError().body("Failed to extract file data"),
     };
 
+    // Get extension for IES/text handling
     let ext = _full_path.split('.').last().unwrap_or("").to_lowercase();
 
     match ext.as_str() {
-        // Image formats: only decode these
-        "png" | "jpg" | "jpeg" | "bmp" | "tga" => match ImageReader::new(Cursor::new(&data))
-            .with_guessed_format()
-        {
-            Ok(reader) => match reader.decode() {
-                Ok(img) => {
-                    let mut png_bytes = Vec::new();
-                    match img.write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png) {
-                        Ok(_) => HttpResponse::Ok().content_type("image/png").body(png_bytes),
-                        Err(_) => HttpResponse::InternalServerError().body("Failed to encode PNG"),
-                    }
-                }
-                Err(e) => HttpResponse::InternalServerError()
-                    .body(format!("Failed to decode image: {}", e)),
-            },
-            Err(e) => HttpResponse::InternalServerError()
-                .body(format!("Failed to guess image format: {}", e)),
-        },
+        // Image formats: detect via magic bytes
+        "png" | "jpg" | "jpeg" | "bmp" => {
+            let mime_type = if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+                "image/png"
+            } else if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+                "image/jpeg"
+            } else if data.starts_with(b"BM") {
+                "image/bmp"
+            } else if data.len() > 18 && &data[0..18] == b"TRUEVISION-XFILE.\0" {
+                "image/tga"
+            } else {
+                "application/octet-stream"
+            };
+            HttpResponse::Ok().content_type(mime_type).body(data)
+        }
 
         // IES format
         "ies" => match IESRoot::from_bytes(&data) {
@@ -326,8 +325,8 @@ pub async fn preview_file(
         },
 
         // Text-like formats
-        "xml" | "skn" | "3dprop" | "3dworld" | "3drender" | "x" | "fx" | "sani" | "effect"
-        | "json" | "atlas" | "sprbin" | "xsd" | "lua" | "lst" | "export" => {
+        "xml" | "skn" | "3dprop" | "3dworld" | "3drender" | "3deffect" | "x" | "fx" | "sani"
+        | "effect" | "json" | "atlas" | "sprbin" | "xsd" | "lua" | "lst" | "export" => {
             let text = String::from_utf8_lossy(&data);
             HttpResponse::Ok()
                 .content_type("text/plain")

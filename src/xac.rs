@@ -1,29 +1,190 @@
-use binrw::{BinRead, BinReaderExt, binread};
+use binrw::{BinRead, BinReaderExt, BinResult, binread};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum XacChunkData {
-    XacInfo(XacInfo),
-    XacInfo2(XacInfo2),
-    XacInfo3(XacInfo3),
-    XacInfo4(XacInfo4),
+enum SkeletalMotionType {
+    SkelmotiontypeNormal = 0, // A regular keyframe and keytrack based skeletal motion.
+    SkelmotiontypeWavelet = 1, // A wavelet compressed skeletal motion.
+}
 
-    XacNode(XacNode),
-    XacNode2(XacNode2),
-    XacNode3(XacNode3),
-    XacNode4(XacNode4),
+#[derive(Debug, Serialize, Deserialize)]
+enum FileType {
+    FiletypeUnknown = 0,           // An unknown file, or something went wrong.
+    FiletypeActor,                 // An actor file (.xac).
+    FiletypeSkeletalmotion,        // A skeletal motion file (.xsm).
+    FiletypeWaveletskeletalmotion, // A wavelet compressed skeletal motion (.xsm).
+    FiletypePmorphmotion,          // A progressive morph motion file (.xpm).
+}
 
-    XacSkinningInfo(XacSkinningInfo),
-    XacSkinningInfo2(XacSkinningInfo2),
-    XacSkinningInfo3(XacSkinningInfo3),
-    XacSkinningInfo4(XacSkinningInfo4),
+// shared chunk ID's
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SharedChunk {
+    SharedChunkMotioneventtable = 50,
+    SharedChunkTimestamp = 51,
+}
 
-    XacStandardMaterial(XacStandardMaterial),
-    XacStandardMaterial2(XacStandardMaterial2),
-    XacStandardMaterial3(XacStandardMaterial3),
+// matrix multiplication order
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MatrixMulOrder {
+    MulorderScaleRotTrans = 0,
+    MulorderRotScaleTrans = 1,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MeshType {
+    MeshtypeStatic = 0, //< Static mesh, like a cube or building (can still be position/scale/rotation animated though).
+    MeshtypeDynamic = 1, //< Has mesh deformers that have to be processed on the CPU.
+    MeshtypeGpuskinned = 2, //< Just a skinning mesh deformer that gets processed on the GPU with skinned shader.
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum PhonemeSet {
+    PhonemesetNone = 0,
+    PhonemesetNeutralPose = 1 << 0,
+    PhonemesetMBPX = 1 << 1,
+    PhonemesetAaAoOw = 1 << 2,
+    PhonemesetIhAeAhEyAyH = 1 << 3,
+    PhonemesetAw = 1 << 4,
+    PhonemesetNNgChJDhDGTKZZhThSSh = 1 << 5,
+    PhonemesetIyEhY = 1 << 6,
+    PhonemesetUwUhOy = 1 << 7,
+    PhonemesetFV = 1 << 8,
+    PhonemesetLEl = 1 << 9,
+    PhonemesetW = 1 << 10,
+    PhonemesetREr = 1 << 11,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum WaveletType {
+    WaveletHaar = 0, // The Haar wavelet, which is most likely what you want to use. It is the fastest also.
+    WaveletDaub4 = 1, // Daubechies 4 wavelet, can result in bit better compression ratios, but slower than Haar.
+    WaveletCdf97 = 2, // The CDF97 wavelet, used in JPG as well. This is the slowest, but often results in the best compression ratios.
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum NodeFlags {
+    FlagIncludeinboundscalc = 1 << 0, // Specifies whether we have to include this node in the bounds calculation or not (true on default).
+    FlagAttachment = 1 << 1, // Indicates if this node is an attachment node or not (false on default).
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Plane {
+    PlaneXy = 0, // The XY plane, so where Z is constant.
+    PlaneXz = 1, // The XZ plane, so where Y is constant.
+    PlaneYz = 2, // The YZ plane, so where X is constant.
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum DependencyType {
+    DependencyMeshes = 1 << 0,     // Shared meshes.
+    DependencyTransforms = 1 << 1, // Shared transforms.
+}
+
+/// The motion based actor repositioning mask
+#[derive(Debug, Serialize, Deserialize)]
+pub enum RepositioningMask {
+    RepositionPosition = 1 << 0, // Update the actor position based on the repositioning node.
+    RepositionRotation = 1 << 1, // Update the actor rotation based on the repositioning node.
+    RepositionScale = 1 << 2, // [CURRENTLY UNSUPPORTED] Update the actor scale based on the repositioning node.
+}
+
+/// The order of multiplication when composing a transformation matrix from a translation, rotation and scale.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MultiplicationOrder {
+    ScaleRotationTranslation = 0, // LocalTM = scale * rotation * translation (Maya style).
+    RotationScaleTranslation = 1, // LocalTM = rotation * scale * translation (3DSMax style) [default].
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum LimitType {
+    TranslationX = 1 << 0, // Position limit on the x axis.
+    TranslationY = 1 << 1, // Position limit on the y axis.
+    TranslationZ = 1 << 2, // Position limit on the z axis.
+    RotationX = 1 << 3,    // Rotation limit on the x axis.
+    RotationY = 1 << 4,    // Rotation limit on the y axis.
+    RotationZ = 1 << 5,    // Rotation limit on the z axis.
+    ScaleX = 1 << 6,       // Scale limit on the x axis.
+    ScaleY = 1 << 7,       // Scale limit on the y axis.
+    ScaleZ = 1 << 8,       // Scale limit on the z axis.
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum XACAttribute {
+    AttribPositions = 0, // Vertex positions. Typecast to MCore::Vector3. Positions are always exist.
+    AttribNormals = 1,   // Vertex normals. Typecast to MCore::Vector3. Normals are always exist.
+    AttribTangents = 2,  // Vertex tangents. Typecast to <b> MCore::Vector4 </b>.
+    AttribUvcoords = 3,  // Vertex uv coordinates. Typecast to MCore::Vector2.
+    AttribColors32 = 4,  // Vertex colors in 32-bits. Typecast to uint32.
+    AttribOrgvtxnumbers = 5, // Original vertex numbers. Typecast to uint32. Original vertex numbers always exist.
+    AttribColors128 = 6,     // Vertex colors in 128-bits. Typecast to MCore::RGBAColor.
+    AttribBitangents = 7, // Vertex bitangents (aka binormal). Typecast to MCore::Vector3. When tangents exists bitangents may still not exist!
+}
+
+// collection of XAC chunk IDs
+#[derive(Debug, Serialize, Deserialize)]
+pub enum XACChunk {
+    XACChunkNode = 0,
+    XACChunkMesh = 1,
+    XACChunkSkinninginfo = 2,
+    XACChunkStdmaterial = 3,
+    XACChunkStdmateriallayer = 4,
+    XACChunkFxmaterial = 5,
+    XACChunkLimit = 6,
+    XACChunkInfo = 7,
+    XACChunkMeshlodlevels = 8,
+    XACChunkStdprogmorphtarget = 9,
+    XACChunkNodegroups = 10,
+    XACChunkNodes = 11,             // XAC_Nodes
+    XACChunkStdpmorphtargets = 12,  // XAC_PMorphTargets
+    XACChunkMaterialinfo = 13,      // XAC_MaterialInfo
+    XACChunkNodemotionsources = 14, // XAC_NodeMotionSources
+    XACChunkAttachmentnodes = 15,   // XAC_AttachmentNodes
+    XACForce32bit = 0xFFFFFFFF,
+}
+
+// material layer map types
+#[derive(Debug, Serialize, Deserialize)]
+pub enum XACMaterialLayer {
+    XACLayeridUnknown = 0,       // unknown layer
+    XACLayeridAmbient = 1,       // ambient layer
+    XACLayeridDiffuse = 2,       // a diffuse layer
+    XACLayeridSpecular = 3,      // specular layer
+    XACLayeridOpacity = 4,       // opacity layer
+    XACLayeridBump = 5,          // bump layer
+    XACLayeridSelfillum = 6,     // self illumination layer
+    XACLayeridShine = 7,         // shininess (for specular)
+    XACLayeridShinestrength = 8, // shine strength (for specular)
+    XACLayeridFiltercolor = 9,   // filter color layer
+    XACLayeridReflect = 10,      // reflection layer
+    XACLayeridRefract = 11,      // refraction layer
+    XACLayeridEnvironment = 12,  // environment map layer
+    XACLayeridDisplacement = 13, // displacement map layer
+    XACLayeridForce8bit = 0xFF,  // don't use more than 8 bit values
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum XACChunkData {
+    XACInfo(XACInfo),
+    XACInfo2(XACInfo2),
+    XACInfo3(XACInfo3),
+    XACInfo4(XACInfo4),
+
+    XACNode(XACNode),
+    XACNode2(XACNode2),
+    XACNode3(XACNode3),
+    XACNode4(XACNode4),
+
+    XACSkinningInfo(XACSkinningInfo),
+    XACSkinningInfo2(XACSkinningInfo2),
+    XACSkinningInfo3(XACSkinningInfo3),
+    XACSkinningInfo4(XACSkinningInfo4),
+
+    XACStandardMaterial(XACStandardMaterial),
+    XACStandardMaterial2(XACStandardMaterial2),
+    XACStandardMaterial3(XACStandardMaterial3),
 
     XACStandardMaterialLayer(XACStandardMaterialLayer),
     XACStandardMaterialLayer2(XACStandardMaterialLayer2),
@@ -144,7 +305,7 @@ pub struct File16BitQuaternion {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacHeader {
+pub struct XACHeader {
     pub fourcc: u32,     // Must be "XAC "
     pub hi_version: u8,  // High version (e.g., 2 in v2.34)
     pub lo_version: u8,  // Low version (e.g., 34 in v2.34)
@@ -155,7 +316,7 @@ pub struct XacHeader {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacInfo {
+pub struct XACInfo {
     pub repositioning_mask: u32,
     pub repositioning_node_index: u32,
     pub exporter_high_version: u8,
@@ -186,7 +347,7 @@ pub struct XacInfo {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacInfo2 {
+pub struct XACInfo2 {
     pub repositioning_mask: u32,
     pub repositioning_node_index: u32,
     pub exporter_high_version: u8,
@@ -218,7 +379,7 @@ pub struct XacInfo2 {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacInfo3 {
+pub struct XACInfo3 {
     pub trajectory_node_index: u32,
     pub motion_extraction_node_index: u32,
     pub motion_extraction_mask: u32,
@@ -251,7 +412,7 @@ pub struct XacInfo3 {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacInfo4 {
+pub struct XACInfo4 {
     pub num_lods: u32,
     pub trajectory_node_index: u32,
     pub motion_extraction_node_index: u32,
@@ -284,7 +445,7 @@ pub struct XacInfo4 {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacNode {
+pub struct XACNode {
     pub local_quat: FileQuaternion,
     pub scale_rot: FileQuaternion,
     pub local_pos: FileVector3,
@@ -302,7 +463,7 @@ pub struct XacNode {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacNode2 {
+pub struct XACNode2 {
     pub local_quat: FileQuaternion,
     pub scale_rot: FileQuaternion,
     pub local_pos: FileVector3,
@@ -322,7 +483,7 @@ pub struct XacNode2 {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacNode3 {
+pub struct XACNode3 {
     pub local_quat: FileQuaternion,
     pub scale_rot: FileQuaternion,
     pub local_pos: FileVector3,
@@ -343,7 +504,7 @@ pub struct XacNode3 {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacNode4 {
+pub struct XACNode4 {
     pub local_quat: FileQuaternion,
     pub scale_rot: FileQuaternion,
     pub local_pos: FileVector3,
@@ -378,51 +539,51 @@ pub struct XACMeshLodLevel {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacUv {
+pub struct XACUv {
     pub axis_u: f32, // U texture coordinate
     pub axis_v: f32, // V texture coordinate
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, BinRead)]
 #[br(little)]
-pub struct XacSkinInfoPerVertex {
+pub struct XACSkinInfoPerVertex {
     pub num_influences: u8,
     #[br(count = num_influences)]
-    pub influences: Vec<XacSkinInfluence>,
+    pub influences: Vec<XACSkinInfluence>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, BinRead)]
 #[br(import(num_org_verts:u32))]
 #[br(little)]
-pub struct XacSkinningInfo {
+pub struct XACSkinningInfo {
     pub node_index: u32,
     pub is_for_collision_mesh: u8,
     pub padding: [u8; 3],
 
     #[br(count = num_org_verts)]
-    pub skinning_influence: Vec<XacSkinInfoPerVertex>,
+    pub skinning_influence: Vec<XACSkinInfoPerVertex>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, BinRead)]
 #[br(import(num_org_verts:u32))]
 #[br(little)]
-pub struct XacSkinningInfo2 {
+pub struct XACSkinningInfo2 {
     pub node_index: u32,           // The node number in the actor
     pub num_total_influences: u32, // Total number of influences of all vertices together
     pub is_for_collision_mesh: u8, // Is it for a collision mesh?
     pub padding: [u8; 3],
 
     #[br(count = num_total_influences)]
-    pub skinning_influence: Vec<XacSkinInfluence>,
+    pub skinning_influence: Vec<XACSkinInfluence>,
 
     #[br(count = num_org_verts)]
-    pub skinning_info_table_entry: Vec<XacSkinningInfoTableEntry>,
+    pub skinning_info_table_entry: Vec<XACSkinningInfoTableEntry>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, BinRead)]
 #[br(import(num_org_verts:u32))]
 #[br(little)]
-pub struct XacSkinningInfo3 {
+pub struct XACSkinningInfo3 {
     pub node_index: u32,           // The node number in the actor
     pub num_local_bones: u32,      // Number of local bones used by the mesh
     pub num_total_influences: u32, // Total number of influences of all vertices together
@@ -430,16 +591,16 @@ pub struct XacSkinningInfo3 {
     pub padding: [u8; 3],
 
     #[br(count = num_total_influences)]
-    pub skinning_influence: Vec<XacSkinInfluence>,
+    pub skinning_influence: Vec<XACSkinInfluence>,
 
     #[br(count = num_org_verts)]
-    pub skinning_info_table_entry: Vec<XacSkinningInfoTableEntry>,
+    pub skinning_info_table_entry: Vec<XACSkinningInfoTableEntry>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, BinRead)]
 #[br(import(num_org_verts:u32))]
 #[br(little)]
-pub struct XacSkinningInfo4 {
+pub struct XACSkinningInfo4 {
     pub node_index: u32,           // The node number in the actor
     pub lod: u32,                  // Level of detail
     pub num_local_bones: u32,      // Number of local bones used by the mesh
@@ -448,16 +609,16 @@ pub struct XacSkinningInfo4 {
     pub padding: [u8; 3],
 
     #[br(count = num_total_influences)]
-    pub skinning_influence: Vec<XacSkinInfluence>,
+    pub skinning_influence: Vec<XACSkinInfluence>,
 
     #[br(count = num_org_verts)]
-    pub skinning_info_table_entry: Vec<XacSkinningInfoTableEntry>,
+    pub skinning_info_table_entry: Vec<XACSkinningInfoTableEntry>,
 }
 
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacSkinningInfoTableEntry {
+pub struct XACSkinningInfoTableEntry {
     pub start_index: u32,  // Index inside the SkinInfluence array
     pub num_elements: u32, // Number of influences for this item/entry
 }
@@ -465,7 +626,7 @@ pub struct XacSkinningInfoTableEntry {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacSkinInfluence {
+pub struct XACSkinInfluence {
     pub weight: f32,
     pub node_number: u32,
 }
@@ -473,7 +634,7 @@ pub struct XacSkinInfluence {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacStandardMaterial {
+pub struct XACStandardMaterial {
     pub ambient: FileColor,    // Ambient color
     pub diffuse: FileColor,    // Diffuse color
     pub specular: FileColor,   // Specular color
@@ -496,7 +657,7 @@ pub struct XacStandardMaterial {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacStandardMaterial2 {
+pub struct XACStandardMaterial2 {
     pub ambient: FileColor,
     pub diffuse: FileColor,
     pub specular: FileColor,
@@ -521,7 +682,7 @@ pub struct XacStandardMaterial2 {
 #[binread]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[br(little)]
-pub struct XacStandardMaterial3 {
+pub struct XACStandardMaterial3 {
     pub lod: u32, // Level of detail
     pub ambient: FileColor,
     pub diffuse: FileColor,
@@ -939,7 +1100,7 @@ pub struct XACNodes {
     pub num_root_nodes: u32,
 
     #[br(count = num_nodes)]
-    pub xac_node: Vec<XacNode4>,
+    pub xac_node: Vec<XACNode4>,
 }
 
 #[binread]
@@ -981,9 +1142,209 @@ pub struct XACAttachmentNodes {
     pub attachment_indices: Vec<u16>, // List of node indices for attachments
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
-pub struct XACFile {
-    pub header: XacHeader,
-    pub chunk: Vec<FileChunk>,
-    pub chunk_data: Vec<XacChunkData>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct XACChunkEntry {
+    pub chunk: FileChunk,
+    pub chunk_data: XACChunkData,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct XACRoot {
+    pub header: XACHeader,
+    pub chunks: Vec<XACChunkEntry>,
+}
+
+impl XACRoot {
+    /// Read XACRoot from a file path, accepting &str or &Path
+    pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let path_ref = path.as_ref();
+        let file = File::open(path_ref)?;
+        let mut reader = BufReader::new(file);
+        let root = XACRoot {
+            header: reader
+                .read_le()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("binrw error: {}", e)))?,
+            chunks: Self::read_chunks(&mut reader)?,
+        };
+
+        Ok(root)
+    }
+
+    /// Read XACRoot from a byte slice in memory
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        let mut cursor = Cursor::new(bytes);
+        let root = XACRoot {
+            header: cursor
+                .read_le()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("binrw error: {}", e)))?,
+            chunks: Self::read_chunks(&mut cursor)?,
+        };
+
+        Ok(root)
+    }
+
+    fn read_chunks<R: Read + Seek>(reader: &mut R) -> io::Result<Vec<XACChunkEntry>> {
+        let mut chunks = Vec::new();
+        while let Ok(chunk) = FileChunk::read(reader) {
+            let pos = reader.seek(SeekFrom::Current(0))?;
+            let mut chunk_data_buf = vec![0u8; chunk.size_in_bytes as usize];
+            reader.read_exact(&mut chunk_data_buf)?;
+
+            // parse chunk_data_buf based on chunk_id
+            let chunk_data = Self::parse_chunk_data(&chunk, &chunk_data_buf).unwrap();
+            reader.seek(SeekFrom::Start(pos + chunk.size_in_bytes as u64))?;
+
+            chunks.push(XACChunkEntry { chunk, chunk_data });
+        }
+        Ok(chunks)
+    }
+
+    fn parse_chunk_data(chunk: &FileChunk, data: &[u8]) -> Result<XACChunkData, binrw::Error> {
+        let mut cursor = Cursor::new(data);
+
+        match chunk.chunk_id {
+            x if x == XACChunk::XACChunkInfo as u32 => match chunk.version {
+                1 => Ok(XACChunkData::XACInfo(cursor.read_le()?)),
+                2 => Ok(XACChunkData::XACInfo2(cursor.read_le()?)),
+                3 => Ok(XACChunkData::XACInfo3(cursor.read_le()?)),
+                4 => Ok(XACChunkData::XACInfo4(cursor.read_le()?)),
+                _ => Self::unsupported(chunk, &cursor),
+            },
+
+            x if x == XACChunk::XACChunkNode as u32 => match chunk.version {
+                1 => Ok(XACChunkData::XACNode(cursor.read_le()?)),
+                2 => Ok(XACChunkData::XACNode2(cursor.read_le()?)),
+                3 => Ok(XACChunkData::XACNode3(cursor.read_le()?)),
+                4 => Ok(XACChunkData::XACNode4(cursor.read_le()?)),
+
+                _ => Self::unsupported(chunk, &cursor),
+            },
+
+            x if x == XACChunk::XACChunkSkinninginfo as u32 => match chunk.version {
+                1 => Ok(XACChunkData::XACSkinningInfo(cursor.read_le()?)),
+                2 => Ok(XACChunkData::XACSkinningInfo2(cursor.read_le()?)),
+                3 => Ok(XACChunkData::XACSkinningInfo3(cursor.read_le()?)),
+                4 => Ok(XACChunkData::XACSkinningInfo4(cursor.read_le()?)),
+
+                _ => Self::unsupported(chunk, &cursor),
+            },
+
+            x if x == XACChunk::XACChunkStdmaterial as u32 => match chunk.version {
+                1 => Ok(XACChunkData::XACStandardMaterial(cursor.read_le()?)),
+                2 => Ok(XACChunkData::XACStandardMaterial2(cursor.read_le()?)),
+                3 => Ok(XACChunkData::XACStandardMaterial3(cursor.read_le()?)),
+
+                _ => Self::unsupported(chunk, &cursor),
+            },
+
+            x if x == XACChunk::XACChunkStdmateriallayer as u32 => match chunk.version {
+                1 => Ok(XACChunkData::XACStandardMaterialLayer(cursor.read_le()?)),
+                2 => Ok(XACChunkData::XACStandardMaterialLayer(cursor.read_le()?)),
+
+                _ => Self::unsupported(chunk, &cursor),
+            },
+
+            x if x == XACChunk::XACChunkMesh as u32 => match chunk.version {
+                1 => Ok(XACChunkData::XACMesh(cursor.read_le()?)),
+                2 => Ok(XACChunkData::XACMesh2(cursor.read_le()?)),
+                _ => Self::unsupported(chunk, &cursor),
+            },
+
+            x if x == XACChunk::XACChunkLimit as u32 => {
+                Ok(XACChunkData::XACLimit(cursor.read_le()?))
+            }
+
+            x if x == XACChunk::XACChunkStdprogmorphtarget as u32 => {
+                Ok(XACChunkData::XACPMorphTarget(cursor.read_le()?))
+            }
+
+            x if x == XACChunk::XACChunkStdpmorphtargets as u32 => {
+                Ok(XACChunkData::XACPMorphTargets(cursor.read_le()?))
+            }
+
+            x if x == XACChunk::XACChunkFxmaterial as u32 => match chunk.version {
+                1 => Ok(XACChunkData::XACFXMaterial(cursor.read_le()?)),
+                2 => Ok(XACChunkData::XACFXMaterial2(cursor.read_le()?)),
+                3 => Ok(XACChunkData::XACFXMaterial3(cursor.read_le()?)),
+
+                _ => Self::unsupported(chunk, &cursor),
+            },
+
+            x if x == XACChunk::XACChunkNodegroups as u32 => {
+                Ok(XACChunkData::XACNodeGroup(cursor.read_le()?))
+            }
+
+            x if x == XACChunk::XACChunkNodes as u32 => {
+                Ok(XACChunkData::XACNodes(cursor.read_le()?))
+            }
+
+            x if x == XACChunk::XACChunkMaterialinfo as u32 => match chunk.version {
+                1 => Ok(XACChunkData::XACMaterialInfo(cursor.read_le()?)),
+                2 => Ok(XACChunkData::XACMaterialInfo2(cursor.read_le()?)),
+                _ => Self::unsupported(chunk, &cursor),
+            },
+
+            x if x == XACChunk::XACChunkMeshlodlevels as u32 => {
+                Ok(XACChunkData::XACMeshLodLevel(cursor.read_le()?))
+            }
+
+            x if x == XACChunk::XACChunkNodemotionsources as u32 => {
+                Ok(XACChunkData::XACNodeMotionSources(cursor.read_le()?))
+            }
+
+            x if x == XACChunk::XACChunkAttachmentnodes as u32 => {
+                Ok(XACChunkData::XACAttachmentNodes(cursor.read_le()?))
+            }
+
+            _ => Self::unsupported(chunk, &cursor),
+        }
+    }
+
+    /// helper for unsupported chunk/version
+    fn unsupported(
+        chunk: &FileChunk,
+        cursor: &Cursor<&[u8]>,
+    ) -> Result<XACChunkData, binrw::Error> {
+        Err(binrw::Error::AssertFail {
+            pos: cursor.position(),
+            message: format!(
+                "Unknown or unsupported chunk_id {} with version {}",
+                chunk.chunk_id, chunk.version
+            ),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    #[test]
+    fn test_read_xac_root() -> io::Result<()> {
+        // Path to your test IES file
+        let path = "tests/archer_m_falconer01.xac";
+
+        // Read XACRoot from file
+        let root = XACRoot::from_file(path)?;
+
+        // Print for debugging (optional)
+        println!("Header: {:#?}", root.header);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_xac_from_memory() -> io::Result<()> {
+        // Load file into memory first
+        let data = std::fs::read("tests/archer_m_falconer01.xac")?;
+
+        // Parse from memory instead of directly from file
+        let root = XACRoot::from_bytes(&data)?;
+
+        println!("Header: {:?}", root.header);
+        println!("Chunks: {:?}", root.chunks);
+
+        Ok(())
+    }
 }

@@ -914,9 +914,10 @@
                     if (!response.ok) throw new Error('Failed to load preview');
 
                     const contentType = response.headers.get('content-type');
+                    const extension = filePath.split('.').pop().toLowerCase();
 
-                    if (contentType.includes('application/json')) {
-                        // IES file - render as table
+                    if (contentType.includes('application/json') && extension === 'ies') {
+                        // Only treat JSON as IES if the file extension is .ies
                         const iesData = await response.json();
                         this.renderIESTable(iesData);
                     } else if (contentType.includes('text/plain')) {

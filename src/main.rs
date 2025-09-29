@@ -17,9 +17,10 @@ mod xac;
 mod xml;
 mod xpm;
 mod xsm;
-
 #[actix_web::main]
 async fn main() -> io::Result<()> {
+    use std::time::Instant;
+
     // ---------------------------
     // Paths
     // ---------------------------
@@ -30,6 +31,7 @@ async fn main() -> io::Result<()> {
     // ---------------------------
     // Parse IPF Archives
     // ---------------------------
+    let ipf_start = Instant::now();
     println!("Parsing IPF archives...");
     let mut parsed_ipfs = ipf::parse_game_ipfs(&game_root)?;
     println!("Parsed {} IPF archives", parsed_ipfs.len());
@@ -43,17 +45,20 @@ async fn main() -> io::Result<()> {
     file_stat_data.count_unique = grouped.len() as u32;
 
     let folder_tree = Arc::new(category::build_tree(grouped));
+    println!("IPF parsing completed in {:.2?}", ipf_start.elapsed());
 
     // ---------------------------
     // Parse Language Data
     // ---------------------------
+    let lang_start = Instant::now();
     println!("Parsing language data...");
     let (_etc_data, _item_data) = tsv::parse_language_data(&lang_folder)?;
-    println!("Parsed language data.");
+    println!("Language parsing completed in {:.2?}", lang_start.elapsed());
 
     // ---------------------------
     // Parse Duplicates
     // ---------------------------
+    let dup_start = Instant::now();
     println!("Parsing duplicates...");
 
     let xac_duplicates = Arc::new(xml::parse_duplicates_xml(
@@ -72,7 +77,10 @@ async fn main() -> io::Result<()> {
         &game_root.join("release/dds_duplicates.xml"),
     )?);
 
-    println!("Parsed duplicates.");
+    println!(
+        "Duplicates parsing completed in {:.2?}",
+        dup_start.elapsed()
+    );
 
     let duplicates_data = web::Data::new(api::Duplicates {
         xac: xac_duplicates,
@@ -83,79 +91,69 @@ async fn main() -> io::Result<()> {
     });
 
     // ---------------------------
-    // Start Actix Web Server
+    // Prepare Actix Web Server
     // ---------------------------
     let folder_tree_data = web::Data::new(folder_tree);
     let game_root_data = web::Data::new(game_root);
     let file_stats = web::Data::new(file_stat_data);
-    // Initialize Tera
     let tera = Tera::new("templates/**/*").expect("Failed to initialize Tera templates");
     let tera_data = web::Data::new(tera);
 
     println!("Starting server at http://127.0.0.1:8080 ...\n");
-    println!("Available endpoints:\n");
-
-    println!("1. GET /api/info");
-    println!("   Usage: curl http://127.0.0.1:8080/api/info");
-    println!("   Description: Returns game root info and duplicate counts.\n");
-
-    println!("2. GET /api/folder/shallow?folder_name=<folder>");
-    println!("   Usage: curl \"http://127.0.0.1:8080/api/folder/shallow?folder_name=ui/brush\"");
-    println!(
-        "   Description: Returns subfolders and files directly inside the specified folder.\n"
-    );
-
-    println!("3. GET /api/file/search?file_name=<file>");
-    println!("   Usage: curl \"http://127.0.0.1:8080/api/file/search?file_name=R1.txt\"");
-    println!(
-        "   Description: Recursively searches for files by name and returns all matches with version indices.\n"
-    );
-
-    println!("4. GET /api/file/fullpath?full_path=<file>");
-    println!("   Usage: curl \"http://127.0.0.1:8080/api/file/fullpath?full_path=ies/actor.ies\"");
-    println!(
-        "   Description: Search for a file by exact path, returns all available versions with version index.\n"
-    );
-
-    println!("5. GET /api/file/download?path=<file>&version=<index>");
-    println!(
-        "   Usage: curl -O \"http://127.0.0.1:8080/api/file/download?path=ies/actor.ies&version=0\""
-    );
-    println!(
-        "   Description: Download the raw file. Optionally specify a version (default is 0).\n"
-    );
-
-    println!("6. GET /api/file/parse?path=<file>&version=<index>");
-    println!(
-        "   Usage: curl \"http://127.0.0.1:8080/api/file/parse?path=ies/actor.ies&version=0\""
-    );
-    println!(
-        "   Description: Parse the file as an IES (lighting profile). Optionally specify a version (default is 0).\n"
-    );
-
-    println!("7. GET /api/file/preview?path=<file>&version=<index>");
-    println!(
-        "   Usage: curl \"http://127.0.0.1:8080/api/file/preview?path=ies/actor.ies&version=0\""
-    );
-    println!(
-        "   Description: Preview the file according to its type:\n\
-     - .ies → parsed JSON IES lighting profile\n\
-     - .xml → raw XML text\n\
-     - .lua → raw Lua text\n\
-     - .png/.jpg/.jpeg/.bmp/.tga → image bytes\n\
-     - others → raw binary data\n\
-     Optionally specify a version (default is 0).\n"
-    );
 
     HttpServer::new(move || {
         App::new()
             .app_data(folder_tree_data.clone())
             .app_data(game_root_data.clone())
             .app_data(duplicates_data.clone())
-            .app_data(tera_data.clone()) // register Tera
+            .app_data(tera_data.clone())
             .app_data(file_stats.clone())
             .configure(api::init_routes)
-            .service(web_data::index) // our template route
+            .service(web_data::home)
+
+     // ---------------------------
+// Home Page Endpoint
+// ---------------------------
+.route("/", web::get().to(|| async {
+    let html = r#"
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Tree of Savior API Home</title>
+    <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css' rel='stylesheet'>
+    <style>
+        body { padding: 40px; background-color: #f8f9fa; }
+        h1 { margin-bottom: 30px; }
+        .btn-api { margin: 5px 0; width: 100%; text-align: left; }
+        .container { max-width: 600px; }
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <h1 class='text-center'>Tree of Savior API Home</h1>
+        <div class='d-grid gap-2'>
+            <a href='/home' class='btn btn-primary btn-api'>/home - Homepage</a>
+            <a href='/api/info' class='btn btn-primary btn-api'>/api/info - Game info & duplicate counts</a>
+            <a href='/api/folder/shallow?folder_name=&lt;folder&gt;' class='btn btn-secondary btn-api'>/api/folder/shallow?folder_name=&lt;folder&gt; - Subfolders & files</a>
+            <a href='/api/file/search?file_name=&lt;file&gt;' class='btn btn-secondary btn-api'>/api/file/search?file_name=&lt;file&gt; - Search files by name</a>
+            <a href='/api/file/fullpath?full_path=&lt;file&gt;' class='btn btn-secondary btn-api'>/api/file/fullpath?full_path=&lt;file&gt; - Search by full path</a>
+            <a href='/api/file/download?path=&lt;file&gt;&version=&lt;index&gt;' class='btn btn-success btn-api'>/api/file/download?path=&lt;file&gt;&version=&lt;index&gt; - Download file</a>
+            <a href='/api/file/parse?path=&lt;file&gt;&version=&lt;index&gt;' class='btn btn-warning btn-api'>/api/file/parse?path=&lt;file&gt;&version=&lt;index&gt; - Parse file (IES)</a>
+            <a href='/api/file/preview?path=&lt;file&gt;&version=&lt;index&gt;' class='btn btn-info btn-api'>/api/file/preview?path=&lt;file&gt;&version=&lt;index&gt; - Preview file by type</a>
+        </div>
+    </div>
+</body>
+</html>
+    "#;
+    actix_web::HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(html)
+}))
+
+
+            
     })
     .bind(("127.0.0.1", 8080))?
     .run()

@@ -5,8 +5,8 @@ use tera::{Context, Tera};
 
 use crate::{api::Duplicates, category::Folder, ipf::FileSizeStats};
 
-#[get("/")]
-pub async fn index(
+#[get("/home")]
+pub async fn home(
     tera: web::Data<Tera>,
     folder_tree: web::Data<Arc<Folder>>,
     duplicates: web::Data<Duplicates>,

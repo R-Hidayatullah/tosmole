@@ -1083,6 +1083,9 @@
                         throw new Error('WebGL not supported');
                     }
 
+                    gl.enable(gl.BLEND);
+                    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
                     // Get compression extension
                     const ext = gl.getExtension('WEBGL_compressed_texture_s3tc') ||
                         gl.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
@@ -1180,7 +1183,6 @@
 
                     // Render
                     gl.viewport(0, 0, width, height);
-                    gl.clearColor(0.2, 0.2, 0.2, 1.0);
                     gl.clear(gl.COLOR_BUFFER_BIT);
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 

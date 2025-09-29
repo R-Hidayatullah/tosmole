@@ -901,15 +901,16 @@
         </small>
     </div>
     <div class="table-responsive">
-        <table class="table table-sm table-dark table-striped table-bordered align-middle text-center">
+            <table class="table table-sm table-dark table-striped table-bordered align-middle text-center">
             <thead class="table-secondary text-dark">
                 <tr>
-                    <th scope="col">Number</th>
-                    <th scope="col">Index</th>
+                    <th scope="col" class="align-middle">Row Number</th>
+                    <th scope="col" class="align-middle">Index Number</th>
+                    <th scope="col" class="align-middle">Index</th>
 `;
 
                 headers.forEach(header => {
-                    tableHTML += `<th scope="col">${header}</th>`;
+                    tableHTML += `<th scope="col" class="align-middle">${header}</th>`;
                 });
 
                 tableHTML += `
@@ -918,9 +919,12 @@
             <tbody>
 `;
 
+                let numberRow = 1;
                 // Add sorted data rows
                 iesData.data.forEach((row, index) => {
-                    tableHTML += `<tr><td>${row.index_data}</td>`;
+                    tableHTML += `<tr><td>${numberRow}</td>`;
+
+                    tableHTML += `<td>${row.index_data}</td>`;
 
                     // Add row text data
                     if (row.row_text) {
@@ -942,6 +946,7 @@
                     }
 
                     tableHTML += `</tr>`;
+                    numberRow++;
                 });
 
                 tableHTML += `

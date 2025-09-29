@@ -20,7 +20,6 @@ unsafe extern "C" {
     ) -> *mut c_uchar;
 }
 
-
 pub struct Image {
     pub width: i32,
     pub height: i32,
@@ -81,7 +80,6 @@ pub fn encode_png_to_memory(img: &Image) -> Option<Vec<u8>> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,11 +87,9 @@ mod tests {
     #[test]
     fn test_load_tga_from_memory() {
         // Load a sample TGA file into memory
-        let tga_bytes = std::fs::read("tests/enclass.tga")
-            .expect("missing tests/enclass.tga file");
+        let tga_bytes = std::fs::read("tests/enclass.tga").expect("missing tests/enclass.tga file");
 
-        let img = load_tga_from_memory(&tga_bytes)
-            .expect("failed to decode TGA");
+        let img = load_tga_from_memory(&tga_bytes).expect("failed to decode TGA");
 
         assert!(img.width > 0);
         assert!(img.height > 0);
@@ -108,15 +104,12 @@ mod tests {
     #[test]
     fn test_tga_to_png_conversion() {
         // Load TGA into memory
-        let tga_bytes = std::fs::read("tests/enclass.tga")
-            .expect("missing tests/enclass.tga file");
+        let tga_bytes = std::fs::read("tests/enclass.tga").expect("missing tests/enclass.tga file");
 
-        let img = load_tga_from_memory(&tga_bytes)
-            .expect("failed to decode TGA");
+        let img = load_tga_from_memory(&tga_bytes).expect("failed to decode TGA");
 
         // Encode PNG to memory
-        let png_bytes = encode_png_to_memory(&img)
-            .expect("failed to encode PNG");
+        let png_bytes = encode_png_to_memory(&img).expect("failed to encode PNG");
 
         // PNG signature check (first 8 bytes)
         assert!(png_bytes.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));

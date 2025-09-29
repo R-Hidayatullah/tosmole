@@ -1,7 +1,9 @@
 #![allow(unused)]
 
 use actix_web::{App, HttpServer, web};
-use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc};
+use serde::Deserialize;
+use serde_json::from_reader;
+use std::{collections::BTreeMap, fs::File, io::{self, BufReader}, path::PathBuf, sync::Arc};
 use tera::Tera;
 
 use category::Folder;
@@ -17,16 +19,39 @@ mod xac;
 mod xml;
 mod xpm;
 mod xsm;
+
+
+#[derive(Debug, Deserialize)]
+struct PathsConfig {
+    game_root: String,
+}
+
+fn load_game_root_from_json(file_path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let file = File::open(file_path)?;
+    let reader = BufReader::new(file);
+    let config: PathsConfig = serde_json::from_reader(reader)?;
+    Ok(PathBuf::from(config.game_root))
+}
+
+
 #[actix_web::main]
 async fn main() -> io::Result<()> {
     use std::time::Instant;
 
+
     // ---------------------------
-    // Paths
+    // Load game_root dynamically (or hardcode if you prefer)
     // ---------------------------
-    let game_root = PathBuf::from("/home/ridwan/Documents/TreeOfSaviorCN/");
-    let lang_folder =
-        PathBuf::from("/home/ridwan/Documents/TreeOfSaviorCN/release/languageData/English");
+let game_root = load_game_root_from_json("paths.json")
+    .expect("Failed to load game_root from paths.json");
+
+    // ---------------------------
+    // Derive lang_folder from game_root
+    // ---------------------------
+    let lang_folder = game_root.join("release/languageData/English");
+
+    println!("Game root: {:?}", game_root);
+    println!("Language folder: {:?}", lang_folder);
 
     // ---------------------------
     // Parse IPF Archives

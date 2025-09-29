@@ -734,6 +734,15 @@
 
                     const fullPath = parentPath ? `${parentPath}/${fileName}` : fileName;
                     this.loadFileInfo(fullPath);
+
+                    this.selectedVersion = 0;
+
+                    // Load the preview
+                    this.loadFilePreview(this.currentFile, this.selectedVersion);
+
+                    // Update file info for the selected version
+                    const fileInfo = this.fileVersions[this.selectedVersion] || this.fileVersions[0];
+                    this.updateFileDetails(fileInfo);
                 });
 
                 return element;

@@ -304,13 +304,15 @@ pub async fn preview_file(
 
     match ext.as_str() {
         // Image formats: detect via magic bytes
-        "png" | "jpg" | "jpeg" | "bmp" => {
+        "png" | "jpg" | "jpeg" | "bmp" | "tga" | "dds" => {
             let mime_type = if data.starts_with(b"\x89PNG\r\n\x1a\n") {
                 "image/png"
             } else if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
                 "image/jpeg"
             } else if data.starts_with(b"BM") {
                 "image/bmp"
+            } else if data.len() > 4 && &data[0..4] == b"DDS " {
+                "image/dds"
             } else if data.len() > 18 && &data[0..18] == b"TRUEVISION-XFILE.\0" {
                 "image/tga"
             } else {

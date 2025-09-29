@@ -855,6 +855,10 @@
                         // Text file - render as code
                         const text = await response.text();
                         this.renderTextContent(text, filePath);
+                    } else if (contentType.includes('image/') && (filePath.toLowerCase().endsWith('.dds') || contentType.includes('dds'))) {
+                        // DDS: fetch as ArrayBuffer and render with WebGL compressed texture support
+                        const arrayBuffer = await response.arrayBuffer();
+                        this.renderDDSContent(arrayBuffer);
                     } else if (contentType.includes('image/')) {
                         // Image file - render as image
                         const blob = await response.blob();
@@ -868,6 +872,8 @@
                     this.showError('Failed to load file preview');
                 }
             }
+
+
 
             renderIESTable(iesData) {
                 const previewContent = document.getElementById('previewContent');
@@ -963,28 +969,251 @@
                 const previewContent = document.getElementById('previewContent');
                 const imageUrl = URL.createObjectURL(blob);
 
-                previewContent.innerHTML = `
-                    <div class="text-center">
-                        <img src="${imageUrl}" class="img-fluid rounded shadow" style="max-height: 70vh;" alt="Preview">
-                    </div>
-                `;
+                const img = new Image();
+                img.onload = () => {
+                    previewContent.innerHTML = `
+            <div class="text-center">
+                <img src="${imageUrl}" class="img-fluid rounded shadow" style="max-height: 70vh;" alt="Preview">
+            </div>
+        `;
+
+                    // Add debug info
+                    const debugInfo = document.createElement('div');
+                    debugInfo.className = 'mt-3 p-3';
+                    debugInfo.style.background = 'rgba(255, 255, 255, 0.05)';
+                    debugInfo.style.borderRadius = '8px';
+                    debugInfo.style.fontSize = '0.85rem';
+                    debugInfo.innerHTML = `
+            <div class="text-light">
+                <strong>Image Debug Information:</strong><br>
+                <span style="color: #4a90e2;">Dimensions:</span> ${img.naturalWidth} x ${img.naturalHeight}<br>
+                <span style="color: #4a90e2;">Format:</span> ${blob.type || 'Unknown'}<br>
+                <span style="color: #4a90e2;">File Size:</span> ${this.formatBytes(blob.size)}<br>
+                <span style="color: #4a90e2;">Aspect Ratio:</span> ${(img.naturalWidth / img.naturalHeight).toFixed(3)}
+            </div>
+        `;
+                    previewContent.appendChild(debugInfo);
+                };
+
+                img.onerror = () => {
+                    previewContent.innerHTML = `
+            <div class="text-center text-danger p-4">
+                <i class="bi bi-exclamation-triangle" style="font-size: 3rem;"></i>
+                <h5 class="mt-3">Error Loading Image</h5>
+                <p>Failed to decode image format</p>
+            </div>
+        `;
+                };
+
+                img.src = imageUrl;
             }
 
-            renderBinaryContent(filePath, version) {
+
+            renderDDSContent(arrayBuffer) {
                 const previewContent = document.getElementById('previewContent');
 
-                previewContent.innerHTML = `
-                    <div class="text-center text-light p-5">
-                        <i class="bi bi-file-binary" style="font-size: 4rem; opacity: 0.3;"></i>
-                        <h5 class="mt-3">Binary File</h5>
-                        <p>This file cannot be previewed in the browser</p>
-                        <a href="/api/file/download?path=${encodeURIComponent(filePath)}&version=${version}" 
-                           class="btn btn-primary">
-                            <i class="bi bi-download"></i>
-                            Download File
-                        </a>
-                    </div>
-                `;
+                try {
+                    const DDS_MAGIC = 0x20534444; // "DDS "
+                    const DDS_DX10 = 0x30315844; // "DX10"
+
+                    if (arrayBuffer.byteLength < 128) {
+                        throw new Error('Invalid DDS file size');
+                    }
+
+                    const dds = new DataView(arrayBuffer);
+                    const magic = dds.getUint32(0, true);
+
+                    if (magic !== DDS_MAGIC) {
+                        throw new Error('Invalid DDS header');
+                    }
+
+                    // Read DDS header (matches C++ DDSHeader struct)
+                    const height = dds.getUint32(12, true);
+                    const width = dds.getUint32(16, true);
+                    const fourCC = dds.getUint32(84, true);
+
+                    let offset = 128; // sizeof(DDSHeader)
+                    let format = null;
+                    let blockSize = 0;
+
+                    // Check for DX10 header
+                    if (fourCC === DDS_DX10) {
+                        if (arrayBuffer.byteLength < offset + 20) {
+                            throw new Error('Invalid DDS DX10 file');
+                        }
+
+                        const dxgiFormat = dds.getUint32(offset, true);
+                        offset += 20; // sizeof(DDSHeaderDX10)
+
+                        switch (dxgiFormat) {
+                            case 71: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break;
+                            case 74: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break;
+                            case 77: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break;
+                            case 80: format = 'COMPRESSED_RED_RGTC1'; blockSize = 8; break;
+                            case 83: format = 'COMPRESSED_RG_RGTC2'; blockSize = 16; break;
+                            case 95: format = 'COMPRESSED_RGB_BPTC_SIGNED_FLOAT_ARB'; blockSize = 16; break;
+                            case 98: format = 'COMPRESSED_RGBA_BPTC_UNORM_ARB'; blockSize = 16; break;
+                            default: throw new Error('Unsupported DX10 DDS format');
+                        }
+                    } else {
+                        // Legacy DDS formats
+                        switch (fourCC) {
+                            case 0x31545844: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break; // "DXT1"
+                            case 0x33545844: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break; // "DXT3"
+                            case 0x35545844: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break; // "DXT5"
+                            default: throw new Error('Unsupported legacy DDS format');
+                        }
+                    }
+
+                    // Create WebGL canvas
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    canvas.style.maxWidth = '100%';
+                    canvas.style.maxHeight = '70vh';
+                    canvas.style.display = 'block';
+                    canvas.style.margin = '0 auto';
+                    canvas.style.border = '1px solid #333';
+
+                    previewContent.innerHTML = '';
+                    previewContent.appendChild(canvas);
+
+                    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                    if (!gl) {
+                        throw new Error('WebGL not supported');
+                    }
+
+                    // Get compression extension
+                    const ext = gl.getExtension('WEBGL_compressed_texture_s3tc') ||
+                        gl.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
+                        gl.getExtension('WEBKIT_WEBGL_compressed_texture_s3tc');
+
+                    if (!ext) {
+                        throw new Error('S3TC compression not supported');
+                    }
+
+                    // Map format string to GL constant
+                    const formatMap = {
+                        'COMPRESSED_RGBA_S3TC_DXT1_EXT': ext.COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                        'COMPRESSED_RGBA_S3TC_DXT3_EXT': ext.COMPRESSED_RGBA_S3TC_DXT3_EXT,
+                        'COMPRESSED_RGBA_S3TC_DXT5_EXT': ext.COMPRESSED_RGBA_S3TC_DXT5_EXT
+                    };
+
+                    const glFormat = formatMap[format];
+                    if (!glFormat) {
+                        throw new Error(`Format ${format} not available in WebGL`);
+                    }
+
+                    // Calculate image size (matching C++ logic exactly)
+                    const imageSize = Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * blockSize;
+                    const dataSize = arrayBuffer.byteLength - offset;
+
+                    if (imageSize > dataSize) {
+                        throw new Error('DDS file size mismatch');
+                    }
+
+                    // Create and upload texture
+                    const texture = gl.createTexture();
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+                    const textureData = new Uint8Array(arrayBuffer, offset, imageSize);
+                    gl.compressedTexImage2D(gl.TEXTURE_2D, 0, glFormat, width, height, 0, textureData);
+
+                    // Set texture parameters (matching C++)
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+                    // Create shader program
+                    const vs = gl.createShader(gl.VERTEX_SHADER);
+                    gl.shaderSource(vs, `
+                        attribute vec2 pos;
+                        attribute vec2 uv;
+                        varying vec2 vUV;
+                        void main() {
+                            vUV = uv;
+                            gl_Position = vec4(pos, 0.0, 1.0);
+                        }
+                    `);
+                    gl.compileShader(vs);
+
+                    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+                    gl.shaderSource(fs, `
+                        precision mediump float;
+                        varying vec2 vUV;
+                        uniform sampler2D tex;
+                        void main() {
+                            gl_FragColor = texture2D(tex, vUV);
+                        }
+                    `);
+                    gl.compileShader(fs);
+
+                    const prog = gl.createProgram();
+                    gl.attachShader(prog, vs);
+                    gl.attachShader(prog, fs);
+                    gl.linkProgram(prog);
+                    gl.useProgram(prog);
+
+                    // Setup geometry
+                    const verts = new Float32Array([
+                        -1, -1, 0, 1,
+                        1, -1, 1, 1,
+                        -1, 1, 0, 0,
+                        1, 1, 1, 0
+                    ]);
+
+                    const buf = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+                    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+
+                    const posLoc = gl.getAttribLocation(prog, 'pos');
+                    const uvLoc = gl.getAttribLocation(prog, 'uv');
+
+                    gl.enableVertexAttribArray(posLoc);
+                    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 16, 0);
+
+                    gl.enableVertexAttribArray(uvLoc);
+                    gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 16, 8);
+
+                    gl.uniform1i(gl.getUniformLocation(prog, 'tex'), 0);
+
+                    // Render
+                    gl.viewport(0, 0, width, height);
+                    gl.clearColor(0.2, 0.2, 0.2, 1.0);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                    // Add debug info below the canvas
+                    const debugInfo = document.createElement('div');
+                    debugInfo.className = 'mt-3 p-3';
+                    debugInfo.style.background = 'rgba(255, 255, 255, 0.05)';
+                    debugInfo.style.borderRadius = '8px';
+                    debugInfo.style.fontSize = '0.85rem';
+                    debugInfo.innerHTML = `
+                        <div class="text-light">
+                            <strong>DDS Debug Information:</strong><br>
+                            <span style="color: #4a90e2;">Dimensions:</span> ${width} x ${height}<br>
+                            <span style="color: #4a90e2;">Format:</span> ${format}<br>
+                            <span style="color: #4a90e2;">Block Size:</span> ${blockSize} bytes<br>
+                            <span style="color: #4a90e2;">Image Size:</span> ${imageSize} bytes<br>
+                            <span style="color: #4a90e2;">Data Offset:</span> ${offset} bytes<br>
+                            <span style="color: #4a90e2;">Total File Size:</span> ${arrayBuffer.byteLength} bytes<br>
+                            <span style="color: #4a90e2;">FourCC:</span> 0x${fourCC.toString(16).toUpperCase()}<br>
+                            <span style="color: #4a90e2;">Header Type:</span> ${fourCC === DDS_DX10 ? 'DX10 Extended' : 'Legacy'}
+                        </div>
+                    `;
+                    previewContent.appendChild(debugInfo);
+
+                } catch (error) {
+                    previewContent.innerHTML = `
+                        <div class="text-center text-danger p-4">
+                            <i class="bi bi-exclamation-triangle" style="font-size: 3rem;"></i>
+                            <h5 class="mt-3">Error Loading DDS</h5>
+                            <p>${error.message}</p>
+                        </div>
+                    `;
+                }
             }
 
             async searchFiles(query) {

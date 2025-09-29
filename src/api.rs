@@ -334,8 +334,8 @@ pub async fn preview_file(
         },
 
         // Text-like formats
-        "xml" | "skn" | "3dprop" | "3dworld" | "3drender" | "3deffect" | "x" | "fx" | "sani"
-        | "effect" | "json" | "atlas" | "sprbin" | "xsd" | "lua" | "lst" | "export" => {
+        "xml" | "skn" | "3dprop" | "3dworld" | "3drender" | "3deffect" | "x" | "fx" | "fxh"
+        | "sani" | "effect" | "json" | "atlas" | "sprbin" | "xsd" | "lua" | "lst" | "export" => {
             let text = String::from_utf8_lossy(&data);
             HttpResponse::Ok()
                 .content_type("text/plain")

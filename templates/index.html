@@ -8,6 +8,21 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css"
         rel="stylesheet">
+
+    <!-- Prism.js CSS for styling -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+
+    <!-- Prism.js JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/components/prism-json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/components/prism-xml-doc.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/components/prism-lua.min.js"></script>
+    <!-- Add more languages as needed -->
+    <!-- C/C++ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/components/prism-c.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/components/prism-cpp.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/components/prism-glsl.min.js"></script>
+
     <style>
         body {
             background-color: #0f0f23;
@@ -734,6 +749,7 @@
                     '3dworld': 'bi-code-slash',
                     '3drender': 'bi-code-slash',
                     'fx': 'bi-code-slash',
+                    'fxh': 'bi-code-slash',
                     'x': 'bi-code-slash',
                     'sani': 'bi-code-slash',
                     'effect': 'bi-code-slash',
@@ -853,7 +869,17 @@
                         this.renderIESTable(iesData);
                     } else if (contentType.includes('text/plain')) {
                         // Text file - render as code
-                        const text = await response.text();
+                        let text = await response.text(); // use let, not const
+
+                        const extension = filePath.split('.').pop().toLowerCase();
+                        if (extension === 'json') {
+                            try {
+                                text = JSON.stringify(JSON.parse(text), null, 2); // 2-space indent
+                            } catch (e) {
+                                // fallback if JSON is invalid
+                            }
+                        }
+
                         this.renderTextContent(text, filePath);
                     } else if (contentType.includes('image/') && (filePath.toLowerCase().endsWith('.dds') || contentType.includes('dds'))) {
                         // DDS: fetch as ArrayBuffer and render with WebGL compressed texture support
@@ -872,6 +898,21 @@
                     this.showError('Failed to load file preview');
                 }
             }
+
+            renderBinaryContent(filePath, version = 0) {
+                const previewContent = document.getElementById('previewContent');
+                const fileName = filePath.split('/').pop();
+
+                previewContent.innerHTML = `
+        <div class="bg-dark p-4 rounded text-center" 
+             style="background-color: rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
+            <div style="font-size: 4rem; color: orange;">&#9888;</div> <!-- warning triangle ⚠️ -->
+            <p style="color: orange; font-size: 1.2rem; margin: 0;">Cannot preview binary file</p>
+            <p style="color: #ffffff; font-weight: bold; margin: 0;">${fileName}</p>
+        </div>
+    `;
+            }
+
 
 
 
@@ -959,16 +1000,61 @@
                 previewContent.innerHTML = tableHTML;
             }
 
+
             renderTextContent(text, filePath) {
                 const previewContent = document.getElementById('previewContent');
                 const extension = filePath.split('.').pop().toLowerCase();
 
-                previewContent.innerHTML = `
-                    <div class="bg-dark p-3 rounded" style="background-color: rgba(0,0,0,0.5) !important;">
-                        <pre style="color: #ffffff; margin: 0; white-space: pre-wrap; word-wrap: break-word;"><code class="language-${extension}">${this.escapeHtml(text)}</code></pre>
-                    </div>
-                `;
+                // Map extensions to Prism languages or plain text
+                const extensionMap = {
+                    // XML-like files
+                    xml: 'markup',
+                    skn: 'markup',
+                    '3dprop': 'markup',
+                    '3dworld': 'markup',
+                    '3drender': 'markup',
+                    '3deffect': 'markup',
+                    sani: 'markup',
+                    effect: 'markup',
+                    atlas: 'markup',
+                    sprbin: 'markup',
+                    xsd: 'markup',
+
+                    // C++ style files
+                    x: 'cpp',
+                    fx: 'glsl',
+                    fxh: 'glsl',
+                    export: 'cpp',
+
+                    // JSON files
+                    json: 'json',
+
+
+                    // Lua files
+                    lua: 'lua',
+
+                    // Plain text
+                    lst: 'none',
+                    txt: 'none',
+                };
+
+                const prismLang = extensionMap[extension] || 'none';
+
+
+                previewContent.innerHTML = `<div class="bg-dark p-3 rounded" style="background-color: rgba(0,0,0,0.5) !important;">
+<pre style="color: #ffffff; margin: 0; white-space: pre-wrap; word-wrap: break-word;">
+<code class="${prismLang !== 'none' ? 'language-' + prismLang : ''}">${this.escapeHtml(text)}</code>
+</pre>
+</div>`;
+
+
+                // Apply Prism highlighting if language is not plain text
+                if (window.Prism && prismLang !== 'none') {
+                    Prism.highlightAllUnder(previewContent);
+                }
             }
+
+
 
             renderImageContent(blob) {
                 const previewContent = document.getElementById('previewContent');

@@ -614,15 +614,17 @@
                 const container = parentElement || document.getElementById('fileTree');
                 container.innerHTML = '';
 
-                // Sort subfolders case-insensitively
+
+                // Sort subfolders naturally, case-insensitive
                 const sortedSubfolders = [...data.subfolders].sort((a, b) =>
-                    a.toLowerCase().localeCompare(b.toLowerCase())
+                    a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
                 );
 
-                // Sort files case-insensitively
+                // Sort files naturally, case-insensitive
                 const sortedFiles = [...data.files].sort((a, b) =>
-                    a.toLowerCase().localeCompare(b.toLowerCase())
+                    a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
                 );
+
 
                 // Render sorted subfolders
                 sortedSubfolders.forEach(folder => {
@@ -674,15 +676,18 @@
                             childContainer = document.createElement('div');
                             childContainer.className = 'tree-children collapsed';
 
-                            // Sort subfolders case-insensitively
+
+
+                            // Sort subfolders naturally, case-insensitive
                             const sortedSubfolders = [...folderData.subfolders].sort((a, b) =>
-                                a.toLowerCase().localeCompare(b.toLowerCase())
+                                a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
                             );
 
-                            // Sort files case-insensitively
+                            // Sort files naturally, case-insensitive
                             const sortedFiles = [...folderData.files].sort((a, b) =>
-                                a.toLowerCase().localeCompare(b.toLowerCase())
+                                a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
                             );
+
 
                             // Add sorted subfolders
                             sortedSubfolders.forEach(subfolder => {
@@ -850,7 +855,7 @@
                         <a href="/api/file/download?path=${encodeURIComponent(this.currentFile)}&version=${this.selectedVersion || 0}" 
                         class="btn btn-primary">
                         <i class="bi bi-download"></i>
-                            Download File
+                            Download File Raw
                         </a>
                     </div>
                 `;

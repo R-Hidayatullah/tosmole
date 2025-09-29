@@ -299,56 +299,80 @@ pub async fn preview_file(
         Err(_) => return HttpResponse::InternalServerError().body("Failed to extract file data"),
     };
 
-    // Get extension for IES/text handling
+    // Get extension
     let ext = _full_path.split('.').last().unwrap_or("").to_lowercase();
 
-    match ext.as_str() {
-        // Image formats: detect via magic bytes
-        "png" | "jpg" | "jpeg" | "bmp" | "tga" | "dds" => {
-            let mime_type = if data.starts_with(b"\x89PNG\r\n\x1a\n") {
-                "image/png"
-            } else if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
-                "image/jpeg"
-            } else if data.starts_with(b"BM") {
-                "image/bmp"
-            } else if data.len() > 4 && &data[0..4] == b"DDS " {
-                "image/dds"
-            } else if data.len() > 18 && &data[0..18] == b"TRUEVISION-XFILE.\0" {
-                "image/tga"
-            } else {
-                "application/octet-stream"
-            };
-            HttpResponse::Ok().content_type(mime_type).body(data)
-        }
-        // Fonts: TTF
-        "ttf" => HttpResponse::Ok().content_type("font/ttf").body(data),
+    // Group image formats
+    let image_extensions = ["tga", "png", "jpg", "jpeg", "bmp", "dds"];
 
-        // IES format
-        "ies" => match IESRoot::from_bytes(&data) {
+    if image_extensions.contains(&ext.as_str()) {
+        // TGA conversion
+        if ext == "tga" {
+            return match crate::stb::load_tga_from_memory(&data) {
+                Some(img) => match crate::stb::encode_png_to_memory(&img) {
+                    Some(png_bytes) => HttpResponse::Ok().content_type("image/png").body(png_bytes),
+                    None => {
+                        HttpResponse::InternalServerError().body("Failed to encode PNG from TGA")
+                    }
+                },
+                None => HttpResponse::InternalServerError().body("Failed to decode TGA image"),
+            };
+        }
+
+        // Detect MIME type via magic bytes for other images
+        let mime_type = if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+            "image/png"
+        } else if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+            "image/jpeg"
+        } else if data.starts_with(b"BM") {
+            "image/bmp"
+        } else if data.len() > 4 && &data[0..4] == b"DDS " {
+            "image/dds"
+        } else {
+            "application/octet-stream"
+        };
+
+        return HttpResponse::Ok().content_type(mime_type).body(data);
+    }
+
+    // Fonts
+    if ext == "ttf" {
+        return HttpResponse::Ok().content_type("font/ttf").body(data);
+    }
+
+    // IES format
+    if ext == "ies" {
+        return match IESRoot::from_bytes(&data) {
             Ok(ies) => HttpResponse::Ok().json(ies),
             Err(_) => HttpResponse::InternalServerError().body("Failed to parse IES file"),
-        },
+        };
+    }
 
-        // XAC format
-        "xac" => match XACRoot::from_bytes(&data) {
+    // XAC format
+    if ext == "xac" {
+        return match XACRoot::from_bytes(&data) {
             Ok(xac) => HttpResponse::Ok().json(xac),
             Err(_) => HttpResponse::InternalServerError().body("Failed to parse XAC file"),
-        },
-
-        // Text-like formats
-        "xml" | "skn" | "3dprop" | "3dworld" | "3drender" | "3deffect" | "x" | "fx" | "fxh"
-        | "sani" | "effect" | "json" | "atlas" | "sprbin" | "xsd" | "lua" | "lst" | "export" => {
-            let text = String::from_utf8_lossy(&data);
-            HttpResponse::Ok()
-                .content_type("text/plain")
-                .body(text.to_string())
-        }
-
-        // Fallback binary
-        _ => HttpResponse::Ok()
-            .content_type("application/octet-stream")
-            .body(data),
+        };
     }
+
+    // Text-like formats
+    let text_extensions = [
+        "xml", "skn", "3dprop", "3dworld", "3drender", "3deffect", "x", "fx", "fxh", "sani",
+        "effect", "json", "atlas", "sprbin", "xsd", "lua", "lst", "export",
+    ];
+
+    if text_extensions.contains(&ext.as_str()) {
+        let text = String::from_utf8_lossy(&data);
+        return HttpResponse::Ok()
+            .content_type("text/plain")
+            .body(text.to_string());
+    }
+
+    // Fallback binary
+    HttpResponse::Ok()
+        .content_type("application/octet-stream")
+        .body(data)
 }
 
 /// -------------------------

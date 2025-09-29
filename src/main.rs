@@ -10,10 +10,13 @@ mod api;
 mod category;
 mod ies;
 mod ipf;
+mod stb;
 mod tsv;
 mod web_data;
 mod xac;
 mod xml;
+mod xpm;
+mod xsm;
 
 #[actix_web::main]
 async fn main() -> io::Result<()> {

@@ -889,6 +889,10 @@
                         // Image file - render as image
                         const blob = await response.blob();
                         this.renderImageContent(blob);
+                    } else if (contentType.includes('font/')) {
+                        // Font file - render as text
+                        const blob = await response.blob();
+                        this.renderFontContent(blob);
                     } else {
                         // Binary file - show download option
                         this.renderBinaryContent(filePath, version);
@@ -898,6 +902,53 @@
                     this.showError('Failed to load file preview');
                 }
             }
+
+
+            renderFontContent(blob) {
+                const previewContent = document.getElementById('previewContent');
+                previewContent.innerHTML = ''; // clear previous content
+
+                // Create a URL for the font file
+                const fontUrl = URL.createObjectURL(blob);
+                const fontName = 'PreviewFont';
+
+                // Create @font-face style
+                const style = document.createElement('style');
+                style.innerHTML = `
+        @font-face {
+            font-family: '${fontName}';
+            src: url('${fontUrl}');
+        }
+    `;
+                document.head.appendChild(style);
+
+                // Create a text input for live preview
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = 'The quick brown fox jumps over the lazy dog';
+                input.style.width = '100%';
+                input.style.marginBottom = '10px';
+                input.style.padding = '8px';
+                input.style.fontSize = '1.2rem';
+
+                // Create preview div
+                const preview = document.createElement('div');
+                preview.textContent = input.value;
+                preview.style.fontFamily = fontName;
+                preview.style.fontSize = '2rem';
+                preview.style.border = '1px solid #ccc';
+                preview.style.padding = '20px';
+                preview.style.marginTop = '10px';
+
+                // Update preview as user types
+                input.addEventListener('input', () => {
+                    preview.textContent = input.value;
+                });
+
+                previewContent.appendChild(input);
+                previewContent.appendChild(preview);
+            }
+
 
             renderBinaryContent(filePath, version = 0) {
                 const previewContent = document.getElementById('previewContent');

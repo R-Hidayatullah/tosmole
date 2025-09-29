@@ -320,6 +320,8 @@ pub async fn preview_file(
             };
             HttpResponse::Ok().content_type(mime_type).body(data)
         }
+        // Fonts: TTF
+        "ttf" => HttpResponse::Ok().content_type("font/ttf").body(data),
 
         // IES format
         "ies" => match IESRoot::from_bytes(&data) {

@@ -33,12 +33,14 @@ async fn main() -> io::Result<()> {
     println!("Parsing IPF archives...");
     let mut parsed_ipfs = ipf::parse_game_ipfs(&game_root)?;
     println!("Parsed {} IPF archives", parsed_ipfs.len());
+    let mut file_stat_data = ipf::compute_ipf_file_stats(&parsed_ipfs);
 
     let mut all_files = ipf::collect_file_tables_from_parsed(&mut parsed_ipfs);
     ipf::sort_file_tables_by_folder_then_name(&mut all_files);
 
     let grouped: BTreeMap<String, Vec<ipf::IPFFileTable>> =
         ipf::group_file_tables_by_directory(all_files);
+    file_stat_data.count_unique = grouped.len() as u32;
 
     let folder_tree = Arc::new(category::build_tree(grouped));
 
@@ -85,7 +87,7 @@ async fn main() -> io::Result<()> {
     // ---------------------------
     let folder_tree_data = web::Data::new(folder_tree);
     let game_root_data = web::Data::new(game_root);
-
+    let file_stats = web::Data::new(file_stat_data);
     // Initialize Tera
     let tera = Tera::new("templates/**/*").expect("Failed to initialize Tera templates");
     let tera_data = web::Data::new(tera);
@@ -151,6 +153,7 @@ async fn main() -> io::Result<()> {
             .app_data(game_root_data.clone())
             .app_data(duplicates_data.clone())
             .app_data(tera_data.clone()) // register Tera
+            .app_data(file_stats.clone())
             .configure(api::init_routes)
             .service(web_data::index) // our template route
     })

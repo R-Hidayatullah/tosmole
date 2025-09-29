@@ -399,6 +399,8 @@
 </head>
 
 <body>
+
+
     <div class="main-container">
         <!-- Navigation Header -->
         <nav class="navbar navbar-expand-lg">
@@ -410,7 +412,7 @@
                 <div class="d-flex align-items-center text-light">
                     <small class="me-3">
                         <i class="bi bi-files"></i>
-                        {{ total_files }} files
+                        {{ count_unique }} files
                     </small>
                     <small>
                         <i class="bi bi-hdd"></i>
@@ -484,13 +486,6 @@
                 </div>
 
                 <div class="info-content">
-                    <!-- Statistics -->
-                    <div class="stat-card">
-                        <div class="stat-value">{{ total_files }}</div>
-                        <div class="stat-label">Total Files</div>
-                    </div>
-
-
 
                     <!-- File Information Panel -->
                     <div id="fileInfo" style="display: none;">
@@ -499,7 +494,48 @@
                     </div>
 
 
+                    <!-- General Stats -->
+                    <h6 class="mt-4 mb-3">General Stats</h6>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ count_unique }}</div>
+                        <div class="stat-label">Unique Files</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ count_duplicated }}</div>
+                        <div class="stat-label">Duplicated Files</div>
+                    </div>
 
+
+                    <!-- File Size Stats -->
+                    <h6 class="mt-4 mb-3">File Size (Compressed)</h6>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ compressed_lowest }}</div>
+                        <div class="stat-label">Lowest</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ compressed_avg }}</div>
+                        <div class="stat-label">Average</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ compressed_highest }}</div>
+                        <div class="stat-label">Highest</div>
+                    </div>
+
+                    <h6 class="mt-4 mb-3">File Size (Uncompressed)</h6>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ uncompressed_lowest }}</div>
+                        <div class="stat-label">Lowest</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ uncompressed_avg }}</div>
+                        <div class="stat-label">Average</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ uncompressed_highest }}</div>
+                        <div class="stat-label">Highest</div>
+                    </div>
+
+                    <!-- Duplicate Statistics -->
                     <h6 class="mt-4 mb-3">Duplicate Statistics</h6>
                     <div class="stat-card">
                         <div class="stat-value">{{ duplicates_xac + duplicates_xsm + duplicates_xsmtime + duplicates_xpm
@@ -543,6 +579,7 @@
             </div>
         </div>
     </div>
+
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -851,13 +888,14 @@
                         <div class="stat-label">File Path</div>
                         <div class="stat-value" style="font-size: 1rem;">${fileInfo.file_path.toString()}</div>
                     </div>
-                    <div class="mt-3">
+                    <div class="stat-card d-flex justify-content-center align-items-center" style="height: 100px;">
                         <a href="/api/file/download?path=${encodeURIComponent(this.currentFile)}&version=${this.selectedVersion || 0}" 
                         class="btn btn-primary">
                         <i class="bi bi-download"></i>
                             Download File Raw
                         </a>
                     </div>
+
                 `;
             }
 
@@ -964,19 +1002,54 @@
             }
 
 
-            renderBinaryContent(filePath, version = 0) {
+
+            renderBinaryContent(filePath, version = 0, maxBytes = 512) {
                 const previewContent = document.getElementById('previewContent');
                 const fileName = filePath.split('/').pop();
 
-                previewContent.innerHTML = `
-        <div class="bg-dark p-4 rounded text-center" 
-             style="background-color: rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
-            <div style="font-size: 4rem; color: orange;">&#9888;</div> <!-- warning triangle ⚠️ -->
-            <p style="color: orange; font-size: 1.2rem; margin: 0;">Cannot preview binary file</p>
-            <p style="color: #ffffff; font-weight: bold; margin: 0;">${fileName}</p>
-        </div>
-    `;
+                // Fetch the binary data from your API
+                fetch(`/api/file/preview?path=${encodeURIComponent(filePath)}&version=${version}`)
+                    .then(res => {
+                        if (!res.ok) throw new Error('Failed to load file');
+                        return res.arrayBuffer();
+                    })
+                    .then(buffer => {
+                        const bytes = new Uint8Array(buffer);
+                        const length = Math.min(bytes.length, maxBytes);
+
+                        // Convert to hex string
+                        let hex = '';
+                        for (let i = 0; i < length; i += 16) {
+                            const row = bytes.slice(i, i + 16);
+                            const hexBytes = Array.from(row).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                            const ascii = Array.from(row).map(b => {
+                                return b >= 32 && b <= 126 ? String.fromCharCode(b) : '.';
+                            }).join('');
+                            hex += hexBytes.padEnd(16 * 3) + '  ' + ascii + '\n';
+                        }
+
+                        // Render
+                        previewContent.innerHTML = `
+<div class="bg-dark p-3 rounded" style="background-color: rgba(0,0,0,0.5); overflow: auto;">
+    <pre style="color: #ffffff; font-family: monospace; margin: 0;">${hex}</pre>
+    <p style="color: orange; font-size: 0.9rem; margin-top: 0.5rem;">
+        ${fileName} — showing first ${length} byte(s)
+    </p>
+</div>`;
+                    })
+                    .catch(err => {
+                        // Fallback: show warning
+                        previewContent.innerHTML = `
+<div class="bg-dark p-4 rounded text-center" 
+     style="background-color: rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
+    <div style="font-size: 4rem; color: orange;">&#9888;</div>
+    <p style="color: orange; font-size: 1.2rem; margin: 0;">Cannot preview binary file</p>
+    <p style="color: #ffffff; font-weight: bold; margin: 0;">${fileName}</p>
+</div>`;
+                        console.error(err);
+                    });
             }
+
 
 
 

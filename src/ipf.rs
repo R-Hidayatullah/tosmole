@@ -368,6 +368,68 @@ pub fn print_hex_viewer(data: &[u8]) {
         println!();
     }
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileSizeStats {
+    pub count_duplicated: u32,
+    pub count_unique: u32,
+    pub compressed_lowest: u32,
+    pub compressed_highest: u32,
+    pub compressed_avg: u32,
+    pub uncompressed_lowest: u32,
+    pub uncompressed_highest: u32,
+    pub uncompressed_avg: u32,
+}
+
+pub fn compute_ipf_file_stats(ipfs: &[IPFRoot]) -> FileSizeStats {
+    let mut count_duplicated = 0u32;
+    let mut count_unique = 0u32;
+    let mut compressed_sum = 0u64;
+    let mut uncompressed_sum = 0u64;
+    let mut compressed_lowest = u32::MAX;
+    let mut compressed_highest = 0u32;
+    let mut uncompressed_lowest = u32::MAX;
+    let mut uncompressed_highest = 0u32;
+
+    for ipf in ipfs {
+        for file in &ipf.file_table {
+            count_duplicated += 1;
+            compressed_sum += file.file_size_compressed as u64;
+            uncompressed_sum += file.file_size_uncompressed as u64;
+
+            compressed_lowest = compressed_lowest.min(file.file_size_compressed);
+            compressed_highest = compressed_highest.max(file.file_size_compressed);
+
+            uncompressed_lowest = uncompressed_lowest.min(file.file_size_uncompressed);
+            uncompressed_highest = uncompressed_highest.max(file.file_size_uncompressed);
+        }
+    }
+
+    if count_duplicated == 0 {
+        return FileSizeStats {
+            count_duplicated: 0,
+            count_unique: 0,
+            compressed_lowest: 0,
+            compressed_highest: 0,
+            compressed_avg: 0,
+            uncompressed_lowest: 0,
+            uncompressed_highest: 0,
+            uncompressed_avg: 0,
+        };
+    }
+
+    FileSizeStats {
+        count_duplicated,
+        count_unique,
+        compressed_lowest,
+        compressed_highest,
+        compressed_avg: (compressed_sum / count_duplicated as u64) as u32,
+        uncompressed_lowest,
+        uncompressed_highest,
+        uncompressed_avg: (uncompressed_sum / count_duplicated as u64) as u32,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

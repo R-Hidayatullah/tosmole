@@ -2,6 +2,7 @@ use actix_files::NamedFile;
 use actix_web::{HttpResponse, Responder, get, web};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use tera::{Context, Tera};
 
 use crate::category::Folder;
 use crate::ies::IESRoot;
+use crate::ipf::FileSizeStats;
 use crate::ipf::IPFFileTable;
 use crate::xac::XACRoot;
 use crate::xml::{self, DuplicateEntry};
@@ -19,12 +21,19 @@ use crate::xml::{self, DuplicateEntry};
 #[derive(Debug, Serialize)]
 pub struct InfoResponse {
     pub game_root: String,
-    pub total_files: usize,
     pub duplicates_xac: usize,
     pub duplicates_xsm: usize,
     pub duplicates_xsmtime: usize,
     pub duplicates_xpm: usize,
     pub duplicates_dds: usize,
+    pub count_duplicated: u32,
+    pub count_unique: u32,
+    pub compressed_lowest: u32,
+    pub compressed_highest: u32,
+    pub compressed_avg: u32,
+    pub uncompressed_lowest: u32,
+    pub uncompressed_highest: u32,
+    pub uncompressed_avg: u32,
 }
 
 pub struct Duplicates {
@@ -39,28 +48,28 @@ pub struct Duplicates {
 pub async fn api_info(
     folder_tree: web::Data<Arc<Folder>>,
     game_root: web::Data<PathBuf>,
+    file_stats: web::Data<FileSizeStats>,
     duplicates: web::Data<Duplicates>,
 ) -> impl Responder {
-    let total_files = folder_tree.files.len()
-        + folder_tree
-            .subfolders
-            .values()
-            .map(|f| f.files.len())
-            .sum::<usize>();
     let game_root_data = game_root.to_str().unwrap().to_string();
 
     HttpResponse::Ok().json(InfoResponse {
         game_root: game_root_data,
-        total_files,
         duplicates_xac: duplicates.xac.len(),
         duplicates_xsm: duplicates.xsm.len(),
         duplicates_xsmtime: duplicates.xsmtime.len(),
         duplicates_xpm: duplicates.xpm.len(),
         duplicates_dds: duplicates.dds.len(),
+        count_duplicated: file_stats.count_duplicated,
+        count_unique: file_stats.count_unique,
+        compressed_lowest: file_stats.compressed_lowest,
+        compressed_highest: file_stats.compressed_highest,
+        compressed_avg: file_stats.compressed_avg,
+        uncompressed_lowest: file_stats.uncompressed_lowest,
+        uncompressed_highest: file_stats.uncompressed_highest,
+        uncompressed_avg: file_stats.uncompressed_avg,
     })
 }
-
-use std::collections::HashSet;
 
 /// -------------------------
 /// Shallow Folder Search

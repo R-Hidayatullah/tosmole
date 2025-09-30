@@ -344,6 +344,11 @@ pub async fn preview_file(
         return HttpResponse::Ok().content_type(mime_type).body(data);
     }
 
+    // MP3 audio
+    if ext == "mp3" {
+        return HttpResponse::Ok().content_type("audio/mpeg").body(data);
+    }
+
     // Fonts
     if ext == "ttf" {
         return HttpResponse::Ok().content_type("font/ttf").body(data);

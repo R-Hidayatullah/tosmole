@@ -938,6 +938,9 @@
                         // Only treat JSON as IES if the file extension is .ies
                         const iesData = await response.json();
                         this.renderIESTable(iesData);
+                    } else if (contentType.includes('audio') && extension === 'mp3') {
+                        const mp3Data = await response.blob();
+                        this.renderMP3Audio(mp3Data);
                     } else if (contentType.includes('application/json') && extension === 'xac') {
                         const xacData = await response.json();
                         this.renderXACModel(xacData);
@@ -1071,6 +1074,7 @@
                         console.error(err);
                     });
             }
+
 
 
             renderXACModel(xacData) {
@@ -1373,6 +1377,49 @@ void main(){ gl_FragColor = vec4(vColor,1.0); }`;
                 }
             }
 
+            renderMP3Audio(blob) {
+                const previewContent = document.getElementById('previewContent');
+                const audioUrl = URL.createObjectURL(blob);
+
+                previewContent.innerHTML = `
+        <div class="text-center">
+            <audio controls class="w-100 mt-3 shadow rounded">
+                <source src="${audioUrl}" type="${blob.type || 'audio/mpeg'}">
+                Your browser does not support the audio element.
+            </audio>
+        </div>
+    `;
+
+                // Add debug info (like you do for images)
+                const debugInfo = document.createElement('div');
+                debugInfo.className = 'mt-3 p-3';
+                debugInfo.style.background = 'rgba(255, 255, 255, 0.05)';
+                debugInfo.style.borderRadius = '8px';
+                debugInfo.style.fontSize = '0.85rem';
+                debugInfo.innerHTML = `
+        <div class="text-light">
+            <strong>Audio Debug Information:</strong><br>
+            <span style="color: #4a90e2;">Format:</span> ${blob.type || 'Unknown'}<br>
+            <span style="color: #4a90e2;">File Size:</span> ${this.formatBytes(blob.size)}<br>
+            <span style="color: #4a90e2;">Duration:</span> <span id="audioDuration">Loading...</span>
+        </div>
+    `;
+                previewContent.appendChild(debugInfo);
+
+                // Load audio metadata to display duration
+                const audioElement = previewContent.querySelector('audio');
+                audioElement.onloadedmetadata = () => {
+                    const durationElem = document.getElementById('audioDuration');
+                    durationElem.textContent = this.formatTime(audioElement.duration);
+                };
+            }
+
+            // Helper to format seconds into mm:ss
+            formatTime(seconds) {
+                const minutes = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                return `${minutes}:${secs.toString().padStart(2, '0')}`;
+            }
 
 
             renderImageContent(blob) {

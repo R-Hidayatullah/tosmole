@@ -359,10 +359,13 @@ pub async fn preview_file(
 
     // XAC format
     if ext == "xac" {
-        return match XACRoot::from_bytes(&data) {
-            Ok(xac) => HttpResponse::Ok().json(xac),
-            Err(_) => HttpResponse::InternalServerError().body("Failed to parse XAC file"),
-        };
+        match crate::xac::XACRoot::from_bytes(&data) {
+            Ok(xac_root) => {
+                let scene = crate::mesh::Scene::from_xac_root(&xac_root);
+                return HttpResponse::Ok().json(scene);
+            }
+            Err(_) => return HttpResponse::InternalServerError().body("Failed to parse XAC file"),
+        }
     }
 
     // Text-like formats

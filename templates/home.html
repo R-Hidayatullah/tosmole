@@ -90,6 +90,15 @@
             overflow: auto;
         }
 
+        .preview-xac {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 70vh;
+            overflow: hidden;
+        }
+
+
         .info-panel {
             width: 350px;
             min-width: 300px;
@@ -919,6 +928,7 @@
 
             async loadFilePreview(filePath, version = 0) {
                 const previewContent = document.getElementById('previewContent');
+                previewContent.classList.remove("preview-xac"); // revert
                 previewContent.innerHTML = `
                     <div class="loading">
                         <div class="spinner"></div>
@@ -1080,17 +1090,13 @@
             renderXACModel(xacData) {
 
                 const previewContent = document.getElementById('previewContent');
-
-                // Make previewContent fill the available viewport height (optional)
-                previewContent.style.display = 'flex';
-                previewContent.style.justifyContent = 'center';
-                previewContent.style.alignItems = 'center';
-                previewContent.style.height = '70vh'; // or any max height you want
-                previewContent.style.overflow = 'hidden';
+                previewContent.classList.add("preview-xac");
 
                 // Insert canvas
                 previewContent.innerHTML = `
+                    <div class="stat-card">
         <canvas id="glCanvas" class="rounded shadow" style="background:#111; display:block;"></canvas>
+        </div>
     `;
 
 
@@ -1382,11 +1388,13 @@ void main(){ gl_FragColor = vec4(vColor,1.0); }`;
                 const audioUrl = URL.createObjectURL(blob);
 
                 previewContent.innerHTML = `
+                    <div class="stat-card">
         <div class="text-center">
             <audio controls class="w-100 mt-3 shadow rounded">
                 <source src="${audioUrl}" type="${blob.type || 'audio/mpeg'}">
                 Your browser does not support the audio element.
             </audio>
+        </div>
         </div>
     `;
 
@@ -1429,8 +1437,10 @@ void main(){ gl_FragColor = vec4(vColor,1.0); }`;
                 const img = new Image();
                 img.onload = () => {
                     previewContent.innerHTML = `
+                    <div class="stat-card">
             <div class="text-center">
                 <img src="${imageUrl}" class="img-fluid rounded shadow" style="max-height: 70vh;" alt="Preview">
+            </div>
             </div>
         `;
 
@@ -1467,6 +1477,7 @@ void main(){ gl_FragColor = vec4(vColor,1.0); }`;
 
             renderDDSContent(arrayBuffer) {
                 const previewContent = document.getElementById('previewContent');
+
 
                 try {
                     const DDS_MAGIC = 0x20534444; // "DDS "

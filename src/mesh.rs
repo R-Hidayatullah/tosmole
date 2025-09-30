@@ -43,6 +43,7 @@ pub struct SubMesh {
     pub colors32: Vec<u32>,
     pub colors128: Vec<RGBAColor>,
     pub original_vertex_numbers: Vec<u32>,
+    pub indices: Vec<u32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -157,13 +158,23 @@ impl Scene {
 
         for submesh in submeshes {
             let mut s = SubMesh::default();
-            s.textures = String::new(); // You can fill this if you have materials
-            // Process texture name if material_index is valid
-            if submesh.material_index != 0 {
-                if let Some(material_name) = textures_data.get(submesh.material_index as usize) {
-                    s.textures = material_name.to_string();
-                }
-            }
+
+            // Assign material/texture
+            s.textures = if submesh.material_index != 0 {
+                textures_data
+                    .get(submesh.material_index as usize)
+                    .cloned()
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+
+            // Copy indices but offset them to global vertex array
+            s.indices = submesh
+                .indices
+                .iter()
+                .map(|i| i + vertex_offset as u32)
+                .collect();
 
             for v in 0..submesh.num_verts {
                 let actual_index = vertex_offset + v as usize;
@@ -238,16 +249,6 @@ impl Scene {
                     let offset = actual_index * 4;
                     if offset + 4 <= data.len() {
                         s.colors32.push(u32::from_le_bytes(
-                            data[offset..offset + 4].try_into().unwrap(),
-                        ));
-                    }
-                }
-
-                // Original vertex numbers
-                if let Some(data) = original_vertex_numbers_data {
-                    let offset = actual_index * 4;
-                    if offset + 4 <= data.len() {
-                        s.original_vertex_numbers.push(u32::from_le_bytes(
                             data[offset..offset + 4].try_into().unwrap(),
                         ));
                     }
@@ -337,11 +338,13 @@ mod tests {
         // Parse XACRoot from bytes
         let xac_root = crate::xac::XACRoot::from_bytes(&data)?;
 
+        println!("Textures Name: {:#?}", xac_root.get_texture_names());
+
         // Convert to Scene
         let scene = Scene::from_xac_root(&xac_root);
 
         // Debug print
-        println!("Scene root nodes: {:?}", scene.root_nodes);
+        // println!("Scene root nodes: {:?}", scene.root_nodes);
 
         // Basic assertion
         assert!(

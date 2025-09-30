@@ -1135,22 +1135,100 @@
                 canvas.height = window.innerHeight;
                 gl.viewport(0, 0, canvas.width, canvas.height);
 
-                // Shaders
-                const vsSource = `
-attribute vec3 aPosition;
-attribute vec3 aColor;
-uniform mat4 uMVP;
-varying vec3 vColor;
-void main() {
-  gl_Position = uMVP * vec4(aPosition,1.0);
-  vColor = aColor;
-}`;
-                const fsSource = `
-precision mediump float;
-varying vec3 vColor;
-void main(){ gl_FragColor = vec4(vColor,1.0); }`;
 
-                // Compile shader
+                // --- Extract mesh data from Scene JSON ---
+                const positions = [];
+                const colors = [];
+                const indices = [];
+
+                function extractNode(node) {
+                    if (!node) return;
+                    if (node.model && node.model.submeshes) {
+                        for (const sub of node.model.submeshes) {
+                            const baseIndex = positions.length / 3;
+
+                            // Push vertex positions
+                            if (sub.positions && sub.positions.length > 0) {
+                                for (const pos of sub.positions) {
+                                    positions.push(pos.x, pos.y, pos.z);
+                                    colors.push(1.0, 0.6, 0.2); // default orange
+                                }
+                            } else {
+                                // fallback quad
+                                const quad = [
+                                    { x: -1, y: -1, z: -1 },
+                                    { x: 1, y: -1, z: -1 },
+                                    { x: 1, y: 1, z: -1 },
+                                    { x: -1, y: 1, z: -1 }
+                                ];
+                                for (const pos of quad) {
+                                    positions.push(pos.x, pos.y, pos.z);
+                                    colors.push(1.0, 0.6, 0.2);
+                                }
+                            }
+
+                            // Push indices
+                            if (sub.indices && sub.indices.length > 0) {
+                                for (const idx of sub.indices) {
+                                    indices.push(baseIndex + idx);
+                                }
+                            } else if (sub.positions && sub.positions.length === 4) {
+                                // fallback quad
+                                indices.push(baseIndex, baseIndex + 1, baseIndex + 2,
+                                    baseIndex + 2, baseIndex + 3, baseIndex);
+                            } else {
+                                // sequential fallback
+                                const vertCount = sub.positions ? sub.positions.length : 4;
+                                for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
+                            }
+                        }
+                    }
+                    if (node.children) for (const child of node.children) extractNode(child);
+                }
+
+                if (xacData.root_nodes && xacData.root_nodes.length > 0) {
+                    for (const root of xacData.root_nodes) extractNode(root);
+                } else {
+                    // Fallback: single cube
+                    positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
+                    colors.push(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0);
+                    indices.push(0, 1, 2, 2, 3, 0);
+                }
+
+                // --- Interleave position + color ---
+                const vertices = new Float32Array((positions.length / 3) * 6);
+                for (let i = 0; i < positions.length / 3; i++) {
+                    vertices[i * 6 + 0] = positions[i * 3 + 0];
+                    vertices[i * 6 + 1] = positions[i * 3 + 1];
+                    vertices[i * 6 + 2] = positions[i * 3 + 2];
+                    vertices[i * 6 + 3] = colors[i * 3 + 0] ?? 1.0;
+                    vertices[i * 6 + 4] = colors[i * 3 + 1] ?? 1.0;
+                    vertices[i * 6 + 5] = colors[i * 3 + 2] ?? 1.0;
+                }
+                // --- Use Uint32 if needed ---
+                let idxArray;
+                if (positions.length / 3 > 65535) {
+                    gl.getExtension('OES_element_index_uint');
+                    idxArray = new Uint32Array(indices);
+                } else {
+                    idxArray = new Uint16Array(indices);
+                }
+
+                // --- Shaders ---
+                const vsSource = `
+        attribute vec3 aPosition;
+        attribute vec3 aColor;
+        uniform mat4 uMVP;
+        varying vec3 vColor;
+        void main() {
+            gl_Position = uMVP * vec4(aPosition,1.0);
+            vColor = aColor;
+        }`;
+                const fsSource = `
+        precision mediump float;
+        varying vec3 vColor;
+        void main() { gl_FragColor = vec4(vColor,1.0); }`;
+
                 function compileShader(src, type) {
                     const s = gl.createShader(type);
                     gl.shaderSource(s, src);
@@ -1159,88 +1237,87 @@ void main(){ gl_FragColor = vec4(vColor,1.0); }`;
                         console.error(gl.getShaderInfoLog(s));
                     return s;
                 }
-
                 const vs = compileShader(vsSource, gl.VERTEX_SHADER);
                 const fs = compileShader(fsSource, gl.FRAGMENT_SHADER);
-
                 const program = gl.createProgram();
                 gl.attachShader(program, vs);
                 gl.attachShader(program, fs);
                 gl.linkProgram(program);
                 gl.useProgram(program);
 
-                // Cube data
-                const vertices = new Float32Array([
-                    -1, -1, -1, 1, 0, 0, 1, -1, -1, 0, 1, 0, 1, 1, -1, 0, 0, 1, -1, 1, -1, 1, 1, 0,
-                    -1, -1, 1, 1, 0, 1, 1, -1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, -1, 1, 1, 0, 0, 0
-                ]);
-                const indices = new Uint16Array([0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 0, 4, 7, 7, 3, 0, 1, 5, 6, 6, 2, 1, 3, 2, 6, 6, 7, 3, 0, 1, 5, 5, 4, 0]);
-                const edges = new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7]);
+                // --- Buffers ---
+                const vbo = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-                // Buffers
-                const vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-                const ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-                const ebo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, edges, gl.STATIC_DRAW);
+                const ibo = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idxArray, gl.STATIC_DRAW);
 
                 const aPos = gl.getAttribLocation(program, 'aPosition');
                 const aCol = gl.getAttribLocation(program, 'aColor');
-                gl.enableVertexAttribArray(aPos); gl.enableVertexAttribArray(aCol);
+                gl.enableVertexAttribArray(aPos);
+                gl.enableVertexAttribArray(aCol);
                 gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 24, 0);
                 gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 24, 12);
 
                 const uMVP = gl.getUniformLocation(program, 'uMVP');
 
-                // Matrices
+                // --- Matrices ---
                 function identity() { return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
                 function perspective(fov, aspect, near, far) {
                     const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
-                    return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, (2 * far * near) * nf, 0]);
+                    return new Float32Array([
+                        f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, (2 * far * near) * nf, 0
+                    ]);
                 }
                 function multiply(a, b) {
-                    const out = new Float32Array(16);
+                    const o = new Float32Array(16);
                     for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
-                        out[j * 4 + i] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
-                    return out;
+                        o[j * 4 + i] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
+                    return o;
                 }
+                function translate(m, x, y, z) { const t = identity(); t[12] = x; t[13] = y; t[14] = z; return multiply(m, t); }
                 function rotateX(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[5] = c; r[6] = s; r[9] = -s; r[10] = c; return multiply(m, r); }
                 function rotateY(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[0] = c; r[2] = s; r[8] = -s; r[10] = c; return multiply(m, r); }
-                function translate(m, x, y, z) { const t = identity(); t[12] = x; t[13] = y; t[14] = z; return multiply(m, t); }
 
                 const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 30000);
 
-                let wireframe = false;
-                document.addEventListener('keydown', e => { if (e.key === 'w') wireframe = !wireframe; });
-
-
-                // Orbit camera
+                // --- Orbit camera ---
                 let mouseDown = false, lastX = 0, lastY = 0;
-                let rotX = 0, rotY = 0, distance = 6;
-
+                let rotX = 0, rotY = 0, distance = 100;
                 canvas.addEventListener('mousedown', e => { mouseDown = true; lastX = e.clientX; lastY = e.clientY; });
-                canvas.addEventListener('mouseup', e => { mouseDown = false; });
+                canvas.addEventListener('mouseup', () => { mouseDown = false; });
                 canvas.addEventListener('mousemove', e => {
                     if (mouseDown) { rotY -= (e.clientX - lastX) * 0.01; rotX += (e.clientY - lastY) * 0.01; lastX = e.clientX; lastY = e.clientY; }
                 });
-                canvas.addEventListener('wheel', e => { distance += e.deltaY * 0.01; if (distance < 2) distance = 2; if (distance > 20) distance = 20; });
+                canvas.addEventListener('wheel', e => {
+                    distance += e.deltaY * 0.01;
+                    if (distance < 2) distance = 2;
+                    if (distance > 30000) distance = 30000;
+                });
 
-                // Render
+                // --- Render loop ---
                 function render() {
-                    gl.clearColor(0.1, 0.1, 0.1, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST);
+                    gl.clearColor(0.1, 0.1, 0.1, 1);
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                    gl.enable(gl.DEPTH_TEST);
 
-                    // Camera
+                    // rebuild projection with current size + far=30000
+                    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 30000);
+
                     let view = translate(identity(), 0, 0, -distance);
-                    view = rotateX(view, rotX); view = rotateY(view, rotY);
-
-
-                    let model = identity();
-                    let mvp = multiply(proj, multiply(view, model));
+                    view = rotateX(view, rotX);
+                    view = rotateY(view, rotY);
+                    let mvp = multiply(proj, view);
                     gl.uniformMatrix4fv(uMVP, false, mvp);
 
-                    if (wireframe) { gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo); gl.drawElements(gl.LINES, edges.length, gl.UNSIGNED_SHORT, 0); }
-                    else { gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0); }
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+                    gl.drawElements(gl.TRIANGLES, idxArray.length, gl.UNSIGNED_SHORT, 0);
 
                     requestAnimationFrame(render);
                 }
+
                 render();
             }
 

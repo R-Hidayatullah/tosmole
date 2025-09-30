@@ -1,87 +1,117 @@
+
+
 # tosmole
 
-**tosmole** is a Rust project designed to parse Tree of Savior file types, including XSM, XAC, IPF, and IES.
+**tosmole** is a Rust project designed to parse Tree of Savior file types—including XSM, XAC, IPF, IES—and provide a web interface for browsing game data and duplicates.
 
 ## Table of Contents
 
-- [Supported File Types](#supported-file-types)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
+* [Supported File Types](#supported-file-types)
+* [Features](#features)
+* [Installation](#installation)
+* [Usage](#usage)
+* [Configuration](#configuration)
+* [Contributing](#contributing)
+* [License](#license)
 
 ## Supported File Types
 
-- XSM
-- XAC
-- IPF (WIP)
-- IES
+* **XSM** – Animation files (WIP)
+* **XAC** – Character & skeleton files
+* **IPF** – Game archive files
+* **IES** – Tabular data
+
+## Features
+
+* Parses IPF archives and generates a hierarchical folder tree
+* Computes file statistics (unique files, total files)
+* Parses duplicates from XML files (XAC, XSM, XPM, DDS)
+* Serves a web interface using **Actix Web** and **Tera** templates
+* Configurable game root path, address, and port via `paths.json`
 
 ## Installation
 
-To get started with **tosmole**, you need to install Rust and compile the project using `rustup`.
-
 ### Prerequisites
 
-Before you begin, make sure you have [rustup](https://rustup.rs/) installed. Rustup is the recommended way to manage
-Rust toolchains.
+* Install [Rust](https://rustup.rs/) (recommended via **rustup**)
+* Ensure `cargo` is in your system PATH
 
-### Installing Rust and Compiling
+### Compile from Source
 
-1. **Install Rust:**
+1. Clone the repository:
 
-   If you haven't already, install Rust and Cargo by following the instructions on
-   the [official Rust website](https://www.rust-lang.org/tools/install).
+```bash
+git clone https://github.com/R-Hidayatullah/tosmole
+cd tosmole
+```
 
-   If you haven't already, install Rust with the nightly version using rustup:
+2. Compile the project in release mode:
 
-   ```shell
-   rustup default nightly
-   rustup install nightly
-   ```
+```bash
+cargo build --release
+```
 
-2. **Clone the Repository:**
+The executable will be located in `target/release/tosmole`.
 
-   ```shell
-   git clone https://github.com/R-Hidayatullah/tosmole
-   cd tosmole
-    ````
-3. **Compile The Project:**
+## Configuration
 
-   Build the project using Cargo:
-    ```shell
-   cargo build --release
-    ```
-   This will compile the project in release mode, and the executable will be available in the `target/release`
-   directory.
+**tosmole** loads paths and server configuration from `paths.json`:
 
-### Usage
+```json
+{
+    "game_root": "/path/to/TreeOfSavior",
+    "address": "127.0.0.1",
+    "port": 8080
+}
+```
 
-Once you've successfully compiled tosmole, you can use it to parse Tree of Savior file types.
-To use **tosmole**, follow these instructions:
+* `game_root`: Path to the Tree of Savior installation
+* `address` (optional): Server address (default: `127.0.0.1`)
+* `port` (optional): Server port (default: `8080`)
 
-1. **Compile the Program:**
+The language folder is automatically derived as:
 
-   First, make sure you have Rust installed, and the project is compiled using the provided code. If you haven't already
-   compiled it, please refer to the [Installation](#installation) section in the README.
+```
+<game_root>/release/languageData/English
+```
 
-2. **Run the Program:**
+## Usage
 
-   To execute the program, open your terminal and run the following command:
+Run **tosmole** with:
 
-   ```shell
-   tosmole <path_to_file.ipf> [index_number]
-   ```
+```bash
+cargo run --release
+```
 
-### Contributing
+Or directly execute the compiled binary:
 
-Contributions to tosmole are welcome! To contribute, please follow these guidelines:
+```bash
+./target/release/tosmole
+```
 
-- Fork the repository.
-- Create a feature branch (e.g., feature/my-new-feature).
-- Make your changes and commit them.
-- Push to your fork and submit a pull request.
+The server will start at the configured address and port. Open your browser and navigate to:
 
-### License
+```
+http://127.0.0.1:8080
+```
 
-This project is licensed under the GPL-3.0 license.
+### Web Interface
+
+* Browse folder trees of IPF archives
+* View duplicate entries parsed from XML
+* Access file statistics
+
+## Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch: `feature/my-feature`
+3. Make your changes and commit
+4. Push to your fork and open a Pull Request
+
+## License
+
+This project is licensed under **GPL-3.0**.
+
+---

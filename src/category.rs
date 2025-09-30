@@ -120,14 +120,22 @@ impl Folder {
     /// Recursive search for files matching `file_name`, returns full path and reference
     pub fn search_file_recursive<'a>(
         &'a self,
-        file_name: &str,
+        file_name: &str, // could be "barrack dds"
         current_path: &str,
     ) -> Vec<(String, &'a IPFFileTable)> {
         let mut results = Vec::new();
 
+        // Split the search string into words (ignoring extra spaces)
+        let search_words: Vec<String> = file_name
+            .split_whitespace()
+            .map(|w| w.to_lowercase())
+            .collect();
+
         // Check files in current folder
         for f in &self.files {
-            if f.directory_name.to_lowercase().contains(file_name) {
+            let file_lower = f.directory_name.to_lowercase();
+            // Only match if all words are contained
+            if search_words.iter().all(|word| file_lower.contains(word)) {
                 let full_path = if current_path.is_empty() {
                     f.directory_name.clone()
                 } else {

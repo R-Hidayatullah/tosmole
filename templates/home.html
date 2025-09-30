@@ -432,9 +432,13 @@
                     </h6>
                 </div>
 
-                <div class="search-box">
-                    <input type="text" class="search-input" placeholder="Search files..." id="fileSearch">
+                <div class="search-box input-group">
+                    <input type="text" class="form-control search-input" placeholder="Search files..." id="fileSearch">
+                    <button class="btn btn-primary" id="searchBtn">
+                        <i class="bi bi-search"></i>
+                    </button>
                 </div>
+
 
                 <div class="tree-content" id="fileTree">
                     <div class="loading">
@@ -598,10 +602,6 @@
             }
 
             setupEventListeners() {
-                // Search functionality
-                document.getElementById('fileSearch').addEventListener('input', (e) => {
-                    this.searchFiles(e.target.value);
-                });
 
                 // Version selector
                 document.getElementById('versionSelect').addEventListener('change', (e) => {
@@ -615,7 +615,24 @@
                     this.updateFileDetails(fileInfo);
                 });
 
+                document.getElementById('searchBtn').addEventListener('click', () => {
+                    const query = document.getElementById('fileSearch').value;
+                    this.searchFiles(query);
+                });
+
+                // Optional: also trigger search on Enter key
+                document.getElementById('fileSearch').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault(); // prevents accidental form submit if inside a form
+                        const query = e.target.value;
+                        this.searchFiles(query);
+                    }
+                });
+
+
             }
+
+
 
             async loadRootFolders() {
                 try {

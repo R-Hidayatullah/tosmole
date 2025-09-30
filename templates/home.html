@@ -405,7 +405,7 @@
         <!-- Navigation Header -->
         <nav class="navbar navbar-expand-lg">
             <div class="container-fluid">
-                <a class="navbar-brand" href="#">
+                <a class="navbar-brand" href="/home">
                     <i class="bi bi-archive"></i>
                     Tree of Savior Archive Viewer
                 </a>
@@ -433,7 +433,8 @@
                 </div>
 
                 <div class="search-box input-group">
-                    <input type="text" class="form-control search-input" placeholder="Search files..." id="fileSearch">
+                    <input type="text" class="form-control search-input  bg-dark text-light"
+                        placeholder="Search files..." id="fileSearch">
                     <button class="btn btn-primary" id="searchBtn">
                         <i class="bi bi-search"></i>
                     </button>
@@ -1021,7 +1022,7 @@
 
 
 
-            renderBinaryContent(filePath, version = 0, maxBytes = 512) {
+            renderBinaryContent(filePath, version = 0, maxBytes = 1024) {
                 const previewContent = document.getElementById('previewContent');
                 const fileName = filePath.split('/').pop();
 
@@ -1051,7 +1052,7 @@
 <div class="bg-dark p-3 rounded" style="background-color: rgba(0,0,0,0.5); overflow: auto;">
     <pre style="color: #ffffff; font-family: monospace; margin: 0;">${hex}</pre>
     <p style="color: orange; font-size: 0.9rem; margin-top: 0.5rem;">
-        ${fileName} — showing first ${length} byte(s)
+        ${fileName} — showing maximum ${length} byte(s)
     </p>
 </div>`;
                     })
@@ -1527,90 +1528,12 @@
                         });
                         element.classList.add('selected');
 
-                        // Navigate to the file in tree and load it
-                        await this.navigateToFileInTree(filePath);
                         await this.loadFileInfo(filePath);
                     });
 
                     container.appendChild(element);
                 });
             }
-
-            async navigateToFileInTree(filePath) {
-                // Clear search and return to tree view
-                document.getElementById('fileSearch').value = '';
-
-                // Split path into segments
-                const pathSegments = filePath.split('/');
-                const fileName = pathSegments.pop();
-
-                if (pathSegments.length === 0) {
-                    // File is in root, just reload root
-                    await this.loadRootFolders();
-                    return;
-                }
-
-                // Start from root
-                await this.loadRootFolders();
-
-                // Navigate through each folder segment
-                let currentPath = '';
-                let currentContainer = document.getElementById('fileTree');
-
-                for (let i = 0; i < pathSegments.length; i++) {
-                    const segment = pathSegments[i];
-                    currentPath = currentPath ? `${currentPath}/${segment}` : segment;
-
-                    // Find the folder element
-                    const folderElements = currentContainer.querySelectorAll('.tree-item.folder');
-                    let targetFolder = null;
-
-                    for (const folderElement of folderElements) {
-                        const folderName = folderElement.querySelector('span').textContent;
-                        if (folderName === segment) {
-                            targetFolder = folderElement;
-                            break;
-                        }
-                    }
-
-                    if (targetFolder) {
-                        // Click to expand the folder
-                        targetFolder.click();
-
-                        // Wait for expansion to complete
-                        await new Promise(resolve => setTimeout(resolve, 350));
-
-                        // Update current container to the expanded children
-                        const childContainer = targetFolder.nextSibling;
-                        if (childContainer && childContainer.classList.contains('tree-children')) {
-                            currentContainer = childContainer;
-                        }
-                    }
-                }
-
-                // Now find and select the file
-                setTimeout(() => {
-                    const fileElements = currentContainer.querySelectorAll('.tree-item.file');
-                    for (const fileElement of fileElements) {
-                        const fileNameSpan = fileElement.querySelector('span');
-                        if (fileNameSpan && fileNameSpan.textContent === fileName) {
-                            fileElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            fileElement.classList.add('selected');
-                            break;
-                        }
-                    }
-                }, 100);
-
-                const previewContent = document.getElementById('previewContent');
-                previewContent.innerHTML = `
-                    <div class="text-center text-danger p-5">
-                        <i class="bi bi-exclamation-triangle" style="font-size: 4rem; opacity: 0.3;"></i>
-                        <h5 class="mt-3">Error</h5>
-                        <p>${message}</p>
-                    </div>
-                `;
-            }
-
 
             formatBytes(bytes) {
                 if (bytes === 0) return '0 Bytes';

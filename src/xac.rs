@@ -1318,37 +1318,57 @@ impl XACRoot {
         let mut textures = Vec::new();
 
         for entry in &self.chunks {
-            match &entry.chunk_data {
-                XACChunkData::XACStandardMaterial(material) => {
-                    textures.push(material.material_name.clone());
-                }
-                XACChunkData::XACStandardMaterial2(material) => {
-                    textures.push(material.material_name.clone());
-                }
-                XACChunkData::XACStandardMaterial3(material) => {
-                    textures.push(material.material_name.clone());
-                }
-                XACChunkData::XACFXMaterial(material) => {
-                    if let Some(bitmap_params) = &material.xac_fx_bitmap_parameter {
-                        for bitmap in bitmap_params {
-                            textures.push(bitmap.value_name.clone());
+            match entry.chunk.chunk_id {
+                x if x == XACChunk::XACChunkStdmaterial as u32 => match entry.chunk.version {
+                    1 => {
+                        if let XACChunkData::XACStandardMaterial(mat) = &entry.chunk_data {
+                            textures.push(mat.material_name.clone());
                         }
                     }
-                }
-                XACChunkData::XACFXMaterial2(material) => {
-                    if let Some(bitmap_params) = &material.xac_fx_bitmap_parameter {
-                        for bitmap in bitmap_params {
-                            textures.push(bitmap.value_name.clone());
+                    2 => {
+                        if let XACChunkData::XACStandardMaterial2(mat) = &entry.chunk_data {
+                            textures.push(mat.material_name.clone());
                         }
                     }
-                }
-                XACChunkData::XACFXMaterial3(material) => {
-                    if let Some(bitmap_params) = &material.xac_fx_bitmap_parameter {
-                        for bitmap in bitmap_params {
-                            textures.push(bitmap.value_name.clone());
+                    3 => {
+                        if let XACChunkData::XACStandardMaterial3(mat) = &entry.chunk_data {
+                            textures.push(mat.material_name.clone());
                         }
                     }
-                }
+                    _ => {}
+                },
+
+                x if x == XACChunk::XACChunkFxmaterial as u32 => match entry.chunk.version {
+                    1 => {
+                        if let XACChunkData::XACFXMaterial(mat) = &entry.chunk_data {
+                            if let Some(bitmaps) = &mat.xac_fx_bitmap_parameter {
+                                for bitmap in bitmaps {
+                                    textures.push(bitmap.value_name.clone());
+                                }
+                            }
+                        }
+                    }
+                    2 => {
+                        if let XACChunkData::XACFXMaterial2(mat) = &entry.chunk_data {
+                            if let Some(bitmaps) = &mat.xac_fx_bitmap_parameter {
+                                for bitmap in bitmaps {
+                                    textures.push(bitmap.value_name.clone());
+                                }
+                            }
+                        }
+                    }
+                    3 => {
+                        if let XACChunkData::XACFXMaterial3(mat) = &entry.chunk_data {
+                            if let Some(bitmaps) = &mat.xac_fx_bitmap_parameter {
+                                for bitmap in bitmaps {
+                                    textures.push(bitmap.value_name.clone());
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+
                 _ => {}
             }
         }
@@ -1365,7 +1385,7 @@ mod tests {
     #[test]
     fn test_read_xac_root() -> io::Result<()> {
         // Path to your test IES file
-        let path = "tests/npc_lecifer_set.xac";
+        let path = "tests/mage_m_bodybase.xac";
 
         // Read XACRoot from file
         let root = XACRoot::from_file(path)?;

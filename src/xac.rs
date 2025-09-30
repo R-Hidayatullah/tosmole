@@ -1313,6 +1313,48 @@ impl XACRoot {
             ),
         })
     }
+
+    fn get_texture_names(&self) -> Vec<String> {
+        let mut textures = Vec::new();
+
+        for entry in &self.chunks {
+            match &entry.chunk_data {
+                XACChunkData::XACStandardMaterial(material) => {
+                    textures.push(material.material_name.clone());
+                }
+                XACChunkData::XACStandardMaterial2(material) => {
+                    textures.push(material.material_name.clone());
+                }
+                XACChunkData::XACStandardMaterial3(material) => {
+                    textures.push(material.material_name.clone());
+                }
+                XACChunkData::XACFXMaterial(material) => {
+                    if let Some(bitmap_params) = &material.xac_fx_bitmap_parameter {
+                        for bitmap in bitmap_params {
+                            textures.push(bitmap.value_name.clone());
+                        }
+                    }
+                }
+                XACChunkData::XACFXMaterial2(material) => {
+                    if let Some(bitmap_params) = &material.xac_fx_bitmap_parameter {
+                        for bitmap in bitmap_params {
+                            textures.push(bitmap.value_name.clone());
+                        }
+                    }
+                }
+                XACChunkData::XACFXMaterial3(material) => {
+                    if let Some(bitmap_params) = &material.xac_fx_bitmap_parameter {
+                        for bitmap in bitmap_params {
+                            textures.push(bitmap.value_name.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        textures
+    }
 }
 
 #[cfg(test)]
@@ -1323,13 +1365,15 @@ mod tests {
     #[test]
     fn test_read_xac_root() -> io::Result<()> {
         // Path to your test IES file
-        let path = "tests/archer_m_falconer01.xac";
+        let path = "tests/npc_lecifer_set.xac";
 
         // Read XACRoot from file
         let root = XACRoot::from_file(path)?;
 
         // Print for debugging (optional)
         println!("Header: {:#?}", root.header);
+
+        println!("Textures Name: {:#?}", root.get_texture_names());
 
         Ok(())
     }

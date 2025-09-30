@@ -33,6 +33,19 @@ pub async fn home(
     ctx.insert("duplicates_dds", &duplicates.dds.len());
 
     // Render template
+    match tera.render("home.html", &ctx) {
+        Ok(rendered) => HttpResponse::Ok().content_type("text/html").body(rendered),
+        Err(e) => {
+            println!("Tera render error: {:?}", e);
+            HttpResponse::InternalServerError().body(format!("Failed to render template: {}", e))
+        }
+    }
+}
+
+#[get("/")]
+pub async fn index(tera: web::Data<Tera>) -> impl Responder {
+    let mut ctx = Context::new();
+    // Render template
     match tera.render("index.html", &ctx) {
         Ok(rendered) => HttpResponse::Ok().content_type("text/html").body(rendered),
         Err(e) => {

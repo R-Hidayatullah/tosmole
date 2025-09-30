@@ -3,7 +3,13 @@
 use actix_web::{App, HttpServer, web};
 use serde::Deserialize;
 use serde_json::from_reader;
-use std::{collections::BTreeMap, fs::File, io::{self, BufReader}, path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::{self, BufReader},
+    path::PathBuf,
+    sync::Arc,
+};
 use tera::Tera;
 
 use category::Folder;
@@ -20,30 +26,32 @@ mod xml;
 mod xpm;
 mod xsm;
 
-
 #[derive(Debug, Deserialize)]
 struct PathsConfig {
     game_root: String,
+    address: Option<String>, // e.g. "127.0.0.1"
+    port: Option<u16>,       // e.g. 8080
 }
 
-fn load_game_root_from_json(file_path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn load_game_root_from_json(file_path: &str) -> Result<PathsConfig, Box<dyn std::error::Error>> {
     let file = File::open(file_path)?;
     let reader = BufReader::new(file);
     let config: PathsConfig = serde_json::from_reader(reader)?;
-    Ok(PathBuf::from(config.game_root))
+    Ok(config)
 }
-
 
 #[actix_web::main]
 async fn main() -> io::Result<()> {
     use std::time::Instant;
 
-
     // ---------------------------
     // Load game_root dynamically (or hardcode if you prefer)
     // ---------------------------
-let game_root = load_game_root_from_json("paths.json")
-    .expect("Failed to load game_root from paths.json");
+    let config = load_game_root_from_json("paths.json").expect("Failed to load paths.json");
+
+    let game_root = PathBuf::from(&config.game_root);
+    let addr = config.address.unwrap_or_else(|| "127.0.0.1".to_string());
+    let port = config.port.unwrap_or(8080);
 
     // ---------------------------
     // Derive lang_folder from game_root
@@ -124,7 +132,7 @@ let game_root = load_game_root_from_json("paths.json")
     let tera = Tera::new("templates/**/*").expect("Failed to initialize Tera templates");
     let tera_data = web::Data::new(tera);
 
-    println!("Starting server at http://127.0.0.1:8080 ...\n");
+    println!("Starting server at http://{}:{} ...\n", addr, port);
 
     HttpServer::new(move || {
         App::new()
@@ -134,53 +142,10 @@ let game_root = load_game_root_from_json("paths.json")
             .app_data(tera_data.clone())
             .app_data(file_stats.clone())
             .configure(api::init_routes)
+            .service(web_data::index)
             .service(web_data::home)
-
-     // ---------------------------
-// Home Page Endpoint
-// ---------------------------
-.route("/", web::get().to(|| async {
-    let html = r#"
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>Tree of Savior API Home</title>
-    <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css' rel='stylesheet'>
-    <style>
-        body { padding: 40px; background-color: #f8f9fa; }
-        h1 { margin-bottom: 30px; }
-        .btn-api { margin: 5px 0; width: 100%; text-align: left; }
-        .container { max-width: 600px; }
-    </style>
-</head>
-<body>
-    <div class='container'>
-        <h1 class='text-center'>Tree of Savior API Home</h1>
-        <div class='d-grid gap-2'>
-            <a href='/home' class='btn btn-primary btn-api'>/home - Homepage</a>
-            <a href='/api/info' class='btn btn-primary btn-api'>/api/info - Game info & duplicate counts</a>
-            <a href='/api/folder/shallow?folder_name=&lt;folder&gt;' class='btn btn-secondary btn-api'>/api/folder/shallow?folder_name=&lt;folder&gt; - Subfolders & files</a>
-            <a href='/api/file/search?file_name=&lt;file&gt;' class='btn btn-secondary btn-api'>/api/file/search?file_name=&lt;file&gt; - Search files by name</a>
-            <a href='/api/file/fullpath?full_path=&lt;file&gt;' class='btn btn-secondary btn-api'>/api/file/fullpath?full_path=&lt;file&gt; - Search by full path</a>
-            <a href='/api/file/download?path=&lt;file&gt;&version=&lt;index&gt;' class='btn btn-success btn-api'>/api/file/download?path=&lt;file&gt;&version=&lt;index&gt; - Download file</a>
-            <a href='/api/file/parse?path=&lt;file&gt;&version=&lt;index&gt;' class='btn btn-warning btn-api'>/api/file/parse?path=&lt;file&gt;&version=&lt;index&gt; - Parse file (IES)</a>
-            <a href='/api/file/preview?path=&lt;file&gt;&version=&lt;index&gt;' class='btn btn-info btn-api'>/api/file/preview?path=&lt;file&gt;&version=&lt;index&gt; - Preview file by type</a>
-        </div>
-    </div>
-</body>
-</html>
-    "#;
-    actix_web::HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(html)
-}))
-
-
-            
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind((addr, port))?
     .run()
     .await
 }

@@ -1,3 +1,5 @@
 {
-    "game_root": "/home/ridwan/Documents/TreeOfSaviorCN/"
+    "game_root": "/home/ridwan/Documents/TreeOfSaviorCN/",
+    "address": "127.0.0.1",
+    "port": 7777
 }

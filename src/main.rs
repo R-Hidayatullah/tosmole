@@ -16,6 +16,7 @@ use category::Folder;
 
 mod api;
 mod category;
+mod gltf;
 mod ies;
 mod ipf;
 mod stb;

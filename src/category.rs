@@ -127,7 +127,7 @@ impl Folder {
 
         // Check files in current folder
         for f in &self.files {
-            if f.directory_name.contains(file_name) {
+            if f.directory_name.to_lowercase().contains(file_name) {
                 let full_path = if current_path.is_empty() {
                     f.directory_name.clone()
                 } else {

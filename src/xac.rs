@@ -123,6 +123,22 @@ pub enum XACAttribute {
     AttribBitangents = 7, // Vertex bitangents (aka binormal). Typecast to MCore::Vector3. When tangents exists bitangents may still not exist!
 }
 
+impl XACAttribute {
+    pub fn from_u32(val: u32) -> Option<Self> {
+        match val {
+            0 => Some(XACAttribute::AttribPositions),
+            1 => Some(XACAttribute::AttribNormals),
+            2 => Some(XACAttribute::AttribTangents),
+            3 => Some(XACAttribute::AttribUvcoords),
+            4 => Some(XACAttribute::AttribColors32),
+            5 => Some(XACAttribute::AttribOrgvtxnumbers),
+            6 => Some(XACAttribute::AttribColors128),
+            7 => Some(XACAttribute::AttribBitangents),
+            _ => None,
+        }
+    }
+}
+
 // collection of XAC chunk IDs
 #[derive(Debug, Serialize, Deserialize)]
 pub enum XACChunk {
@@ -1314,7 +1330,7 @@ impl XACRoot {
         })
     }
 
-    fn get_texture_names(&self) -> Vec<String> {
+    pub fn get_texture_names(&self) -> Vec<String> {
         let mut textures = Vec::new();
 
         for entry in &self.chunks {

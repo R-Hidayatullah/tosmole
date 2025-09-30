@@ -1136,48 +1136,35 @@
                 gl.viewport(0, 0, canvas.width, canvas.height);
 
 
-                // --- Extract mesh data from Scene JSON ---
-                const positions = [];
-                const colors = [];
-                const indices = [];
+                // --- Extract mesh data ---
+                const positions = [], normals = [], colors = [], indices = [];
 
                 function extractNode(node) {
                     if (!node) return;
                     if (node.model && node.model.submeshes) {
                         for (const sub of node.model.submeshes) {
                             const baseIndex = positions.length / 3;
-
-                            // Push vertex positions
+                            // Positions
                             if (sub.positions && sub.positions.length > 0) {
-                                for (const pos of sub.positions) {
+                                for (let i = 0; i < sub.positions.length; i++) {
+                                    const pos = sub.positions[i];
                                     positions.push(pos.x, pos.y, pos.z);
-                                    colors.push(1.0, 0.6, 0.2); // default orange
-                                }
-                            } else {
-                                // fallback quad
-                                const quad = [
-                                    { x: -1, y: -1, z: -1 },
-                                    { x: 1, y: -1, z: -1 },
-                                    { x: 1, y: 1, z: -1 },
-                                    { x: -1, y: 1, z: -1 }
-                                ];
-                                for (const pos of quad) {
-                                    positions.push(pos.x, pos.y, pos.z);
-                                    colors.push(1.0, 0.6, 0.2);
+
+                                    if (sub.normals && sub.normals[i]) {
+                                        const n = sub.normals[i];
+                                        normals.push(n.x, n.y, n.z);
+                                    } else normals.push(0, 0, 1);
+
+                                    if (sub.colors && sub.colors[i]) {
+                                        const c = sub.colors[i];
+                                        colors.push(c.r ?? 1, c.g ?? 1, c.b ?? 1);
+                                    } else colors.push(1.0, 0.6, 0.2);
                                 }
                             }
-
-                            // Push indices
+                            // Indices
                             if (sub.indices && sub.indices.length > 0) {
-                                for (const idx of sub.indices) {
-                                    indices.push(baseIndex + idx);
-                                }
-                            } else if (sub.positions && sub.positions.length === 4) {
-                                // fallback quad
-                                indices.push(baseIndex, baseIndex + 1, baseIndex + 2,
-                                    baseIndex + 2, baseIndex + 3, baseIndex);
+                                for (const idx of sub.indices) indices.push(baseIndex + idx);
                             } else {
-                                // sequential fallback
                                 const vertCount = sub.positions ? sub.positions.length : 4;
                                 for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
                             }
@@ -1186,57 +1173,95 @@
                     if (node.children) for (const child of node.children) extractNode(child);
                 }
 
-                if (xacData.root_nodes && xacData.root_nodes.length > 0) {
+                if (xacData.root_nodes && xacData.root_nodes.length > 0)
                     for (const root of xacData.root_nodes) extractNode(root);
-                } else {
-                    // Fallback: single cube
+                else {
                     positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
+                    normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
                     colors.push(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0);
                     indices.push(0, 1, 2, 2, 3, 0);
                 }
 
-                // --- Interleave position + color ---
-                const vertices = new Float32Array((positions.length / 3) * 6);
-                for (let i = 0; i < positions.length / 3; i++) {
-                    vertices[i * 6 + 0] = positions[i * 3 + 0];
-                    vertices[i * 6 + 1] = positions[i * 3 + 1];
-                    vertices[i * 6 + 2] = positions[i * 3 + 2];
-                    vertices[i * 6 + 3] = colors[i * 3 + 0] ?? 1.0;
-                    vertices[i * 6 + 4] = colors[i * 3 + 1] ?? 1.0;
-                    vertices[i * 6 + 5] = colors[i * 3 + 2] ?? 1.0;
+                // --- Compute bounding box ---
+                let minX = Infinity, minY = Infinity, minZ = Infinity;
+                let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+                for (let i = 0; i < positions.length; i += 3) {
+                    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+                    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+                    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
                 }
-                // --- Use Uint32 if needed ---
-                let idxArray;
-                if (positions.length / 3 > 65535) {
-                    gl.getExtension('OES_element_index_uint');
-                    idxArray = new Uint32Array(indices);
-                } else {
-                    idxArray = new Uint16Array(indices);
+                const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2, centerZ = (minZ + maxZ) / 2;
+                const sizeX = maxX - minX, sizeY = maxY - minY, sizeZ = maxZ - minZ;
+                const maxSize = Math.max(sizeX, sizeY, sizeZ);
+                let distance = maxSize * 1.5;
+
+                // --- Interleave vertex data ---
+                const vertexCount = positions.length / 3;
+                const vertexData = new Float32Array(vertexCount * 9);
+                for (let i = 0; i < vertexCount; i++) {
+                    vertexData[i * 9 + 0] = positions[i * 3 + 0];
+                    vertexData[i * 9 + 1] = positions[i * 3 + 1];
+                    vertexData[i * 9 + 2] = positions[i * 3 + 2];
+                    vertexData[i * 9 + 3] = normals[i * 3 + 0];
+                    vertexData[i * 9 + 4] = normals[i * 3 + 1];
+                    vertexData[i * 9 + 5] = normals[i * 3 + 2];
+                    vertexData[i * 9 + 6] = colors[i * 3 + 0];
+                    vertexData[i * 9 + 7] = colors[i * 3 + 1];
+                    vertexData[i * 9 + 8] = colors[i * 3 + 2];
                 }
+
+                const indexArray = (vertexCount > 65535) ? new Uint32Array(indices) : new Uint16Array(indices);
 
                 // --- Shaders ---
                 const vsSource = `
-        attribute vec3 aPosition;
-        attribute vec3 aColor;
-        uniform mat4 uMVP;
-        varying vec3 vColor;
-        void main() {
-            gl_Position = uMVP * vec4(aPosition,1.0);
-            vColor = aColor;
-        }`;
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+attribute vec3 aColor;
+uniform mat4 uMVP;
+varying vec3 vColor;
+
+void main() {
+    gl_Position = uMVP * vec4(aPosition,1.0);
+
+    // Define 8 directional lights
+    vec3 lightDirs[8];
+    lightDirs[0] = normalize(vec3(1.0, 1.0, 1.0));
+    lightDirs[1] = normalize(vec3(-1.0, 1.0, 1.0));
+    lightDirs[2] = normalize(vec3(1.0, -1.0, 1.0));
+    lightDirs[3] = normalize(vec3(-1.0, -1.0, 1.0));
+    lightDirs[4] = normalize(vec3(1.0, 1.0, -1.0));
+    lightDirs[5] = normalize(vec3(-1.0, 1.0, -1.0));
+    lightDirs[6] = normalize(vec3(1.0, -1.0, -1.0));
+    lightDirs[7] = normalize(vec3(-1.0, -1.0, -1.0));
+
+    float diff = 0.0;
+    for(int i=0; i<8; i++) {
+        diff += max(dot(aNormal, lightDirs[i]), 0.0);
+    }
+    diff = diff / 4.0; // average contribution
+
+    // Final color: ambient + diffuse
+    vColor = aColor * diff + aColor * 0.2;
+}
+`;
+
                 const fsSource = `
-        precision mediump float;
-        varying vec3 vColor;
-        void main() { gl_FragColor = vec4(vColor,1.0); }`;
+precision mediump float;
+varying vec3 vColor;
+void main() {
+    gl_FragColor = vec4(vColor,1.0);
+}
+`;
+
 
                 function compileShader(src, type) {
                     const s = gl.createShader(type);
                     gl.shaderSource(s, src);
                     gl.compileShader(s);
-                    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
-                        console.error(gl.getShaderInfoLog(s));
+                    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
                     return s;
                 }
+
                 const vs = compileShader(vsSource, gl.VERTEX_SHADER);
                 const fs = compileShader(fsSource, gl.FRAGMENT_SHADER);
                 const program = gl.createProgram();
@@ -1245,25 +1270,27 @@
                 gl.linkProgram(program);
                 gl.useProgram(program);
 
-                // --- Buffers ---
                 const vbo = gl.createBuffer();
                 gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-                gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+                gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
 
                 const ibo = gl.createBuffer();
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idxArray, gl.STATIC_DRAW);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
 
                 const aPos = gl.getAttribLocation(program, 'aPosition');
+                const aNormal = gl.getAttribLocation(program, 'aNormal');
                 const aCol = gl.getAttribLocation(program, 'aColor');
                 gl.enableVertexAttribArray(aPos);
+                gl.enableVertexAttribArray(aNormal);
                 gl.enableVertexAttribArray(aCol);
-                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 24, 0);
-                gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 24, 12);
+                const stride = 9 * 4;
+                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
+                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
+                gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, stride, 24);
 
                 const uMVP = gl.getUniformLocation(program, 'uMVP');
 
-                // --- Matrices ---
                 function identity() { return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
                 function perspective(fov, aspect, near, far) {
                     const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
@@ -1277,48 +1304,59 @@
                         o[j * 4 + i] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
                     return o;
                 }
-                function translate(m, x, y, z) { const t = identity(); t[12] = x; t[13] = y; t[14] = z; return multiply(m, t); }
+                function translate(m, x, y, z) { const t = identity(); t[12] = -x; t[13] = -y; t[14] = -z - distance; return multiply(m, t); }
                 function rotateX(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[5] = c; r[6] = s; r[9] = -s; r[10] = c; return multiply(m, r); }
                 function rotateY(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[0] = c; r[2] = s; r[8] = -s; r[10] = c; return multiply(m, r); }
 
-                const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 30000);
-
-                // --- Orbit camera ---
+                let rotX = 0, rotY = 0;
                 let mouseDown = false, lastX = 0, lastY = 0;
-                let rotX = 0, rotY = 0, distance = 100;
+
                 canvas.addEventListener('mousedown', e => { mouseDown = true; lastX = e.clientX; lastY = e.clientY; });
                 canvas.addEventListener('mouseup', () => { mouseDown = false; });
                 canvas.addEventListener('mousemove', e => {
                     if (mouseDown) { rotY -= (e.clientX - lastX) * 0.01; rotX += (e.clientY - lastY) * 0.01; lastX = e.clientX; lastY = e.clientY; }
                 });
                 canvas.addEventListener('wheel', e => {
-                    distance += e.deltaY * 0.01;
-                    if (distance < 2) distance = 2;
-                    if (distance > 30000) distance = 30000;
-                });
+                    // Prevent page scrolling
+                    e.preventDefault();
 
-                // --- Render loop ---
+                    // Zoom factor per wheel tick
+                    const zoomSpeed = 1.02;
+
+                    if (e.deltaY < 0) {
+                        // Scroll up → zoom in
+                        distance /= zoomSpeed;
+                    } else {
+                        // Scroll down → zoom out
+                        distance *= zoomSpeed;
+                    }
+
+                    // Clamp distance to reasonable range
+                    distance = Math.max(maxSize * 0.5, Math.min(maxSize * 10, distance));
+                }, { passive: false });
+
+
                 function render() {
+                    resizeCanvas();
                     gl.clearColor(0.1, 0.1, 0.1, 1);
                     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
                     gl.enable(gl.DEPTH_TEST);
 
-                    // rebuild projection with current size + far=30000
                     const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 30000);
-
-                    let view = translate(identity(), 0, 0, -distance);
+                    let view = translate(identity(), centerX, centerY, centerZ);
                     view = rotateX(view, rotX);
                     view = rotateY(view, rotY);
-                    let mvp = multiply(proj, view);
-                    gl.uniformMatrix4fv(uMVP, false, mvp);
+                    const mvp = multiply(proj, view);
 
+                    gl.uniformMatrix4fv(uMVP, false, mvp);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-                    gl.drawElements(gl.TRIANGLES, idxArray.length, gl.UNSIGNED_SHORT, 0);
+                    gl.drawElements(gl.TRIANGLES, indexArray.length, vertexCount > 65535 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
 
                     requestAnimationFrame(render);
                 }
 
                 render();
+
             }
 
 

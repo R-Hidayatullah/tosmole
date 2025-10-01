@@ -1276,7 +1276,9 @@
                     vertexData[i * 9 + 7] = colors[i * 3 + 1];
                     vertexData[i * 9 + 8] = colors[i * 3 + 2];
                 }
-                const indexArray = (vertexCount > 65535) ? new Uint32Array(indices) : new Uint16Array(indices);
+
+                //TODO! : Sometimes vertexcount bigger than 65535 but got incorrect model using gl.UNSIGNED_SHORT
+                const indexArray = new Uint16Array(indices);
 
                 // --- Shaders (same sources) ---
                 const vsSource = `
@@ -1429,7 +1431,7 @@ void main() {
                     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
                     gl.enable(gl.DEPTH_TEST);
 
-                    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 30000);
+                    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.01, 30000);
                     let view = translate(identity(), centerX, centerY, centerZ);
                     view = rotateX(view, rotX);
                     view = rotateY(view, rotY);
@@ -1437,7 +1439,8 @@ void main() {
 
                     gl.uniformMatrix4fv(uMVP, false, mvp);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-                    gl.drawElements(gl.TRIANGLES, indexArray.length, vertexCount > 65535 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+                    //TODO! : Sometimes vertexcount bigger than 65535 but got incorrect model using gl.UNSIGNED_SHORT
+                    gl.drawElements(gl.TRIANGLES, indexArray.length, gl.UNSIGNED_SHORT, 0);
 
                     cleanupItems.rafId = requestAnimationFrame(renderLoop);
                 }

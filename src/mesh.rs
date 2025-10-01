@@ -169,13 +169,9 @@ impl Scene {
                 String::new()
             };
 
-            // Copy indices but offset them to global vertex array
-            s.indices = submesh
-                .indices
-                .iter()
-                .map(|i| i + vertex_offset as u32)
-                .collect();
-
+            for index_indices in 0..submesh.num_indices {
+                s.indices.push(submesh.indices[index_indices as usize]);
+            }
             for v in 0..submesh.num_verts {
                 let actual_index = vertex_offset + v as usize;
 

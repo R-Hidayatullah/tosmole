@@ -1201,135 +1201,151 @@ impl XACRoot {
 
     fn read_chunks<R: Read + Seek>(reader: &mut R) -> io::Result<Vec<XACChunkEntry>> {
         let mut chunks = Vec::new();
-        while let Ok(chunk) = FileChunk::read(reader) {
-            let pos = reader.seek(SeekFrom::Current(0))?;
-            let mut chunk_data_buf = vec![0u8; chunk.size_in_bytes as usize];
-            reader.read_exact(&mut chunk_data_buf)?;
 
-            // parse chunk_data_buf based on chunk_id
-            let chunk_data = match Self::parse_chunk_data(&chunk, &chunk_data_buf) {
+        while let Ok(chunk) = FileChunk::read(reader) {
+            let start_pos = reader.seek(SeekFrom::Current(0))?;
+
+            // Attempt to parse directly from the reader
+            let chunk_data = match Self::parse_chunk_data(&chunk, reader) {
                 Ok(data) => data,
                 Err(e) => {
                     eprintln!("Failed to parse chunk {}: {:?}", chunk.chunk_id, e);
-                    continue; // skip this chunk
+
+                    // Fallback: skip chunk based on size_in_bytes
+                    if let Err(seek_err) =
+                        reader.seek(SeekFrom::Start(start_pos + chunk.size_in_bytes as u64))
+                    {
+                        eprintln!("Failed to skip chunk {}: {:?}", chunk.chunk_id, seek_err);
+                    }
+
+                    continue;
                 }
             };
 
-            reader.seek(SeekFrom::Start(pos + chunk.size_in_bytes as u64))?;
+            // Ensure the reader is at least at the end of the chunk according to size_in_bytes
+            let fallback_end = start_pos + chunk.size_in_bytes as u64;
+            let current_pos = reader.seek(SeekFrom::Current(0))?;
+            if current_pos < fallback_end {
+                reader.seek(SeekFrom::Start(fallback_end))?;
+            }
 
             chunks.push(XACChunkEntry { chunk, chunk_data });
         }
+
         Ok(chunks)
     }
 
-    fn parse_chunk_data(chunk: &FileChunk, data: &[u8]) -> Result<XACChunkData, binrw::Error> {
-        let mut cursor = Cursor::new(data);
-
+    fn parse_chunk_data<R: Read + Seek>(
+        chunk: &FileChunk,
+        reader: &mut R,
+    ) -> Result<XACChunkData, binrw::Error> {
         match chunk.chunk_id {
             x if x == XACChunk::XACChunkInfo as u32 => match chunk.version {
-                1 => Ok(XACChunkData::XACInfo(cursor.read_le()?)),
-                2 => Ok(XACChunkData::XACInfo2(cursor.read_le()?)),
-                3 => Ok(XACChunkData::XACInfo3(cursor.read_le()?)),
-                4 => Ok(XACChunkData::XACInfo4(cursor.read_le()?)),
-                _ => Self::unsupported(chunk, &cursor),
+                1 => Ok(XACChunkData::XACInfo(reader.read_le()?)),
+                2 => Ok(XACChunkData::XACInfo2(reader.read_le()?)),
+                3 => Ok(XACChunkData::XACInfo3(reader.read_le()?)),
+                4 => Ok(XACChunkData::XACInfo4(reader.read_le()?)),
+                _ => Self::unsupported(chunk, reader),
             },
 
             x if x == XACChunk::XACChunkNode as u32 => match chunk.version {
-                1 => Ok(XACChunkData::XACNode(cursor.read_le()?)),
-                2 => Ok(XACChunkData::XACNode2(cursor.read_le()?)),
-                3 => Ok(XACChunkData::XACNode3(cursor.read_le()?)),
-                4 => Ok(XACChunkData::XACNode4(cursor.read_le()?)),
+                1 => Ok(XACChunkData::XACNode(reader.read_le()?)),
+                2 => Ok(XACChunkData::XACNode2(reader.read_le()?)),
+                3 => Ok(XACChunkData::XACNode3(reader.read_le()?)),
+                4 => Ok(XACChunkData::XACNode4(reader.read_le()?)),
 
-                _ => Self::unsupported(chunk, &cursor),
+                _ => Self::unsupported(chunk, reader),
             },
 
             x if x == XACChunk::XACChunkSkinninginfo as u32 => match chunk.version {
-                1 => Ok(XACChunkData::XACSkinningInfo(cursor.read_le()?)),
-                2 => Ok(XACChunkData::XACSkinningInfo2(cursor.read_le()?)),
-                3 => Ok(XACChunkData::XACSkinningInfo3(cursor.read_le()?)),
-                4 => Ok(XACChunkData::XACSkinningInfo4(cursor.read_le()?)),
+                1 => Ok(XACChunkData::XACSkinningInfo(reader.read_le()?)),
+                2 => Ok(XACChunkData::XACSkinningInfo2(reader.read_le()?)),
+                3 => Ok(XACChunkData::XACSkinningInfo3(reader.read_le()?)),
+                4 => Ok(XACChunkData::XACSkinningInfo4(reader.read_le()?)),
 
-                _ => Self::unsupported(chunk, &cursor),
+                _ => Self::unsupported(chunk, reader),
             },
 
             x if x == XACChunk::XACChunkStdmaterial as u32 => match chunk.version {
-                1 => Ok(XACChunkData::XACStandardMaterial(cursor.read_le()?)),
-                2 => Ok(XACChunkData::XACStandardMaterial2(cursor.read_le()?)),
-                3 => Ok(XACChunkData::XACStandardMaterial3(cursor.read_le()?)),
+                1 => Ok(XACChunkData::XACStandardMaterial(reader.read_le()?)),
+                2 => Ok(XACChunkData::XACStandardMaterial2(reader.read_le()?)),
+                3 => Ok(XACChunkData::XACStandardMaterial3(reader.read_le()?)),
 
-                _ => Self::unsupported(chunk, &cursor),
+                _ => Self::unsupported(chunk, reader),
             },
 
             x if x == XACChunk::XACChunkStdmateriallayer as u32 => match chunk.version {
-                1 => Ok(XACChunkData::XACStandardMaterialLayer(cursor.read_le()?)),
-                2 => Ok(XACChunkData::XACStandardMaterialLayer(cursor.read_le()?)),
+                1 => Ok(XACChunkData::XACStandardMaterialLayer(reader.read_le()?)),
+                2 => Ok(XACChunkData::XACStandardMaterialLayer(reader.read_le()?)),
 
-                _ => Self::unsupported(chunk, &cursor),
+                _ => Self::unsupported(chunk, reader),
             },
 
             x if x == XACChunk::XACChunkMesh as u32 => match chunk.version {
-                1 => Ok(XACChunkData::XACMesh(cursor.read_le()?)),
-                2 => Ok(XACChunkData::XACMesh2(cursor.read_le()?)),
-                _ => Self::unsupported(chunk, &cursor),
+                1 => Ok(XACChunkData::XACMesh(reader.read_le()?)),
+                2 => Ok(XACChunkData::XACMesh2(reader.read_le()?)),
+                _ => Self::unsupported(chunk, reader),
             },
 
             x if x == XACChunk::XACChunkLimit as u32 => {
-                Ok(XACChunkData::XACLimit(cursor.read_le()?))
+                Ok(XACChunkData::XACLimit(reader.read_le()?))
             }
 
             x if x == XACChunk::XACChunkStdprogmorphtarget as u32 => {
-                Ok(XACChunkData::XACPMorphTarget(cursor.read_le()?))
+                Ok(XACChunkData::XACPMorphTarget(reader.read_le()?))
             }
 
             x if x == XACChunk::XACChunkStdpmorphtargets as u32 => {
-                Ok(XACChunkData::XACPMorphTargets(cursor.read_le()?))
+                Ok(XACChunkData::XACPMorphTargets(reader.read_le()?))
             }
 
             x if x == XACChunk::XACChunkFxmaterial as u32 => match chunk.version {
-                1 => Ok(XACChunkData::XACFXMaterial(cursor.read_le()?)),
-                2 => Ok(XACChunkData::XACFXMaterial2(cursor.read_le()?)),
-                3 => Ok(XACChunkData::XACFXMaterial3(cursor.read_le()?)),
+                1 => Ok(XACChunkData::XACFXMaterial(reader.read_le()?)),
+                2 => Ok(XACChunkData::XACFXMaterial2(reader.read_le()?)),
+                3 => Ok(XACChunkData::XACFXMaterial3(reader.read_le()?)),
 
-                _ => Self::unsupported(chunk, &cursor),
+                _ => Self::unsupported(chunk, reader),
             },
 
             x if x == XACChunk::XACChunkNodegroups as u32 => {
-                Ok(XACChunkData::XACNodeGroup(cursor.read_le()?))
+                Ok(XACChunkData::XACNodeGroup(reader.read_le()?))
             }
 
             x if x == XACChunk::XACChunkNodes as u32 => {
-                Ok(XACChunkData::XACNodes(cursor.read_le()?))
+                Ok(XACChunkData::XACNodes(reader.read_le()?))
             }
 
             x if x == XACChunk::XACChunkMaterialinfo as u32 => match chunk.version {
-                1 => Ok(XACChunkData::XACMaterialInfo(cursor.read_le()?)),
-                2 => Ok(XACChunkData::XACMaterialInfo2(cursor.read_le()?)),
-                _ => Self::unsupported(chunk, &cursor),
+                1 => Ok(XACChunkData::XACMaterialInfo(reader.read_le()?)),
+                2 => Ok(XACChunkData::XACMaterialInfo2(reader.read_le()?)),
+                _ => Self::unsupported(chunk, reader),
             },
 
             x if x == XACChunk::XACChunkMeshlodlevels as u32 => {
-                Ok(XACChunkData::XACMeshLodLevel(cursor.read_le()?))
+                Ok(XACChunkData::XACMeshLodLevel(reader.read_le()?))
             }
 
             x if x == XACChunk::XACChunkNodemotionsources as u32 => {
-                Ok(XACChunkData::XACNodeMotionSources(cursor.read_le()?))
+                Ok(XACChunkData::XACNodeMotionSources(reader.read_le()?))
             }
 
             x if x == XACChunk::XACChunkAttachmentnodes as u32 => {
-                Ok(XACChunkData::XACAttachmentNodes(cursor.read_le()?))
+                Ok(XACChunkData::XACAttachmentNodes(reader.read_le()?))
             }
 
-            _ => Self::unsupported(chunk, &cursor),
+            _ => Self::unsupported(chunk, reader),
         }
     }
 
     /// helper for unsupported chunk/version
-    fn unsupported(
+    fn unsupported<R: Read + Seek>(
         chunk: &FileChunk,
-        cursor: &Cursor<&[u8]>,
+        reader: &mut R,
     ) -> Result<XACChunkData, binrw::Error> {
+        let pos = reader.seek(SeekFrom::Current(0)).unwrap_or(0); // current position, fallback to 0 if error
+
         Err(binrw::Error::AssertFail {
-            pos: cursor.position(),
+            pos,
             message: format!(
                 "Unknown or unsupported chunk_id {} with version {}",
                 chunk.chunk_id, chunk.version

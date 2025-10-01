@@ -137,60 +137,61 @@ impl IESRoot {
         Ok(root)
     }
 
-    /// Extract Mesh -> Path mapping from this IESRoot
-    pub fn extract_mesh_path_map(&self) -> HashMap<String, String> {
-        // Step 1: Sort columns by decl_idx then type_data
-        let mut columns_sorted: Vec<(usize, &IESColumn)> =
-            self.columns.iter().enumerate().collect();
-        columns_sorted.sort_by(|a, b| {
-            a.1.decl_idx
-                .cmp(&b.1.decl_idx)
-                .then(a.1.type_data.cmp(&b.1.type_data))
-        });
+   /// Extract Mesh -> Path mapping from this IESRoot
+pub fn extract_mesh_path_map(&self) -> HashMap<String, String> {
+    // Step 1: Sort columns by decl_idx then type_data
+    let mut columns_sorted: Vec<(usize, &IESColumn)> =
+        self.columns.iter().enumerate().collect();
+    columns_sorted.sort_by(|a, b| {
+        a.1.decl_idx
+            .cmp(&b.1.decl_idx)
+            .then(a.1.type_data.cmp(&b.1.type_data))
+    });
 
-        // Step 2: Find indices of "Mesh" and "Path" in sorted columns
-        let mut mesh_idx: Option<usize> = None;
-        let mut path_idx: Option<usize> = None;
+    // Step 2: Find indices of "Mesh" and "Path" in sorted columns
+    let mut mesh_idx: Option<usize> = None;
+    let mut path_idx: Option<usize> = None;
 
-        for (i, (_original_idx, col)) in columns_sorted.iter().enumerate() {
-            match col.column.as_str() {
-                "Mesh" => mesh_idx = Some(i - 1),
-                "Path" => path_idx = Some(i - 1),
-                _ => {}
-            }
+    for (i, (_original_idx, col)) in columns_sorted.iter().enumerate() {
+        match col.column.as_str() {
+            "Mesh" => mesh_idx = Some(i - 1),
+            "Path" => path_idx = Some(i - 1),
+            _ => {}
         }
-
-        let mesh_idx = match mesh_idx {
-            Some(i) => i,
-            None => return HashMap::new(),
-        };
-        let path_idx = match path_idx {
-            Some(i) => i,
-            None => return HashMap::new(),
-        };
-
-        // Step 3: Extract data using these indices
-        let mut map = HashMap::new();
-        for row in &self.data {
-            let mesh_name = row
-                .texts
-                .get(mesh_idx)
-                .map(|t| t.text_data.replace('\\', "/").clone())
-                .unwrap_or_default();
-
-            let path = row
-                .texts
-                .get(path_idx)
-                .map(|t| t.text_data.replace('\\', "/").clone())
-                .unwrap_or_default();
-
-            if !mesh_name.is_empty() && !path.is_empty() {
-                map.insert(mesh_name, path);
-            }
-        }
-
-        map
     }
+
+    let mesh_idx = match mesh_idx {
+        Some(i) => i,
+        None => return HashMap::new(),
+    };
+    let path_idx = match path_idx {
+        Some(i) => i,
+        None => return HashMap::new(),
+    };
+
+    // Step 3: Extract data using these indices
+    let mut map = HashMap::new();
+    for row in &self.data {
+        let mesh_name = row
+            .texts
+            .get(mesh_idx)
+            .map(|t| t.text_data.replace('\\', "/"))
+            .unwrap_or_default();
+
+        let path = row
+            .texts
+            .get(path_idx)
+            .map(|t| t.text_data.replace('\\', "/"))
+            .unwrap_or_default();
+
+        if !mesh_name.is_empty() && !path.is_empty() {
+            map.insert(mesh_name.to_lowercase(), path);
+        }
+    }
+
+    map
+}
+
 }
 
 #[cfg(test)]

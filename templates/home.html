@@ -1126,111 +1126,146 @@
 
             }
 
-            async loadTextureFromServer(gl, path, version = 0) {
+            // Async texture loader from server
+                    loadTextureFromServer = async (gl, path, version = 0) => {
                 const url = `/api/file/download?path=${encodeURIComponent(path)}&version=${version}`;
+
                 try {
                     const resp = await fetch(url);
                     if (!resp.ok) throw new Error(`Failed to download file: ${resp.status}`);
+
                     const arrayBuffer = await resp.arrayBuffer();
-                    const tex = loadTexture(gl, arrayBuffer); // use the loadTexture function we defined
+                    const tex = await this.loadTexture(gl, arrayBuffer); // <-- await async loadTexture
+
+                    if (!tex) {
+                        console.warn("Using fallback white texture for", path);
+                        return this.createFallbackTexture(gl);
+                    }
+
                     return tex;
                 } catch (err) {
                     console.error("Error loading texture:", err);
-                    return null;
+                    return this.createFallbackTexture(gl);
                 }
             }
 
+            // Creates a simple 1x1 white texture as fallback
+                    createFallbackTexture = (gl) => {
+                const tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
 
-            loadTexture(gl, source) {
-                const texture = gl.createTexture();
+                const whitePixel = new Uint8Array([255, 255, 255, 255]);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0,
+                    gl.RGBA, gl.UNSIGNED_BYTE, whitePixel);
+
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+                return tex;
+            }
+
+
+loadTexture = async (gl, source) => {
+                    const texture = gl.createTexture();
                 gl.bindTexture(gl.TEXTURE_2D, texture);
 
-                // Placeholder 1x1 pixel while loading
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0,
-                    gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 0, 255, 255]));
+                // placeholder 1x1 pixel while loading
+                const placeholder = new Uint8Array([255, 0, 255, 255]);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, placeholder);
 
                 function setupTexture(width, height, data, compressedFormat = null) {
                     gl.bindTexture(gl.TEXTURE_2D, texture);
-
                     if (compressedFormat) {
                         gl.compressedTexImage2D(gl.TEXTURE_2D, 0, compressedFormat, width, height, 0, data);
                     } else {
-                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA,
-                            gl.UNSIGNED_BYTE, data);
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
                     }
-
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                 }
 
-                // If source is ArrayBuffer, assume DDS
-                if (source instanceof ArrayBuffer) {
-                    try {
-                        const DDS_MAGIC = 0x20534444;
-                        const DDS_DX10 = 0x30315844;
-                        const dds = new DataView(source);
-                        const magic = dds.getUint32(0, true);
-                        if (magic !== DDS_MAGIC) throw new Error('Invalid DDS file');
-
-                        const height = dds.getUint32(12, true);
-                        const width = dds.getUint32(16, true);
-                        const fourCC = dds.getUint32(84, true);
-                        let offset = 128;
-                        let format = null;
-                        let blockSize = 0;
-                        let uncompressed = false;
-                        let bytesPerPixel = 4;
-
-                        if (fourCC === DDS_DX10) {
-                            const dxgiFormat = dds.getUint32(offset, true);
-                            offset += 20;
-                            switch (dxgiFormat) {
-                                case 71: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break;
-                                case 74: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break;
-                                case 77: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break;
-                                default: throw new Error('Unsupported DX10 DDS format');
-                            }
-                        } else {
-                            switch (fourCC) {
-                                case 0x31545844: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break;
-                                case 0x33545844: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break;
-                                case 0x35545844: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break;
-                                case 0: uncompressed = true; bytesPerPixel = dds.getUint32(88, true) / 8; break;
-                                default: throw new Error('Unsupported legacy DDS format');
-                            }
-                        }
-
-                        if (uncompressed) {
-                            const pixelData = new Uint8Array(source, offset, width * height * bytesPerPixel);
-                            setupTexture(width, height, pixelData);
-                        } else {
-                            const ext = gl.getExtension('WEBGL_compressed_texture_s3tc') ||
-                                gl.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
-                                gl.getExtension('WEBKIT_WEBGL_compressed_texture_s3tc');
-                            if (!ext) throw new Error('S3TC not supported');
-
-                            const formatMap = {
-                                'COMPRESSED_RGBA_S3TC_DXT1_EXT': ext.COMPRESSED_RGBA_S3TC_DXT1_EXT,
-                                'COMPRESSED_RGBA_S3TC_DXT3_EXT': ext.COMPRESSED_RGBA_S3TC_DXT3_EXT,
-                                'COMPRESSED_RGBA_S3TC_DXT5_EXT': ext.COMPRESSED_RGBA_S3TC_DXT5_EXT
-                            };
-
-                            const glFormat = formatMap[format];
-                            const imageSize = Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * blockSize;
-                            const texData = new Uint8Array(source, offset, imageSize);
-                            setupTexture(width, height, texData, glFormat);
-                        }
-
-                    } catch (e) {
-                        console.warn('Failed to load DDS texture', e);
-                    }
+                if (!(source instanceof ArrayBuffer)) {
+                    // If source is a URL or other type, load asynchronously
+                    const img = new Image();
+                    img.crossOrigin = "anonymous";
+                    await new Promise((resolve, reject) => {
+                        img.onload = () => resolve();
+                        img.onerror = () => reject(new Error("Failed to load image"));
+                        img.src = source;
+                    });
+                    setupTexture(img.width, img.height, img);
                     return texture;
+                }
+
+                // DDS parsing (same as before)
+                try {
+                    const DDS_MAGIC = 0x20534444;
+                    const DDS_DX10 = 0x30315844;
+                    const dds = new DataView(source);
+                    const magic = dds.getUint32(0, true);
+                    if (magic !== DDS_MAGIC) throw new Error('Invalid DDS file');
+
+                    const height = dds.getUint32(12, true);
+                    const width = dds.getUint32(16, true);
+                    const fourCC = dds.getUint32(84, true);
+                    let offset = 128;
+                    let format = null;
+                    let blockSize = 0;
+                    let uncompressed = false;
+                    let bytesPerPixel = 4;
+
+                    if (fourCC === DDS_DX10) {
+                        const dxgiFormat = dds.getUint32(offset, true);
+                        offset += 20;
+                        switch (dxgiFormat) {
+                            case 71: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break;
+                            case 74: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break;
+                            case 77: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break;
+                            default: throw new Error('Unsupported DX10 DDS format');
+                        }
+                    } else {
+                        switch (fourCC) {
+                            case 0x31545844: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break;
+                            case 0x33545844: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break;
+                            case 0x35545844: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break;
+                            case 0: uncompressed = true; bytesPerPixel = dds.getUint32(88, true) / 8; break;
+                            default: throw new Error('Unsupported legacy DDS format');
+                        }
+                    }
+
+                    if (uncompressed) {
+                        const pixelData = new Uint8Array(source, offset, width * height * bytesPerPixel);
+                        setupTexture(width, height, pixelData);
+                    } else {
+                        const ext = gl.getExtension('WEBGL_compressed_texture_s3tc') ||
+                            gl.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
+                            gl.getExtension('WEBKIT_WEBGL_compressed_texture_s3tc');
+                        if (!ext) throw new Error('S3TC not supported');
+
+                        const formatMap = {
+                            'COMPRESSED_RGBA_S3TC_DXT1_EXT': ext.COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                            'COMPRESSED_RGBA_S3TC_DXT3_EXT': ext.COMPRESSED_RGBA_S3TC_DXT3_EXT,
+                            'COMPRESSED_RGBA_S3TC_DXT5_EXT': ext.COMPRESSED_RGBA_S3TC_DXT5_EXT
+                        };
+                        const glFormat = formatMap[format];
+                        const imageSize = Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * blockSize;
+                        const texData = new Uint8Array(source, offset, imageSize);
+                        setupTexture(width, height, texData, glFormat);
+                    }
+                } catch (e) {
+                    console.warn('Failed to load DDS texture, using fallback white', e);
+                    const white = new Uint8Array([255, 255, 255, 255]);
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, white);
                 }
 
                 return texture;
             }
+
 
 
 
@@ -1311,9 +1346,10 @@
 
 
                 // --- Extract mesh data (unchanged logic, just scoped) ---
-                const positions = [], normals = [], colors = [], indices = [], submeshTextures = [], uvs = [], submeshInfos = [];;
+                const positions = [], normals = [], colors = [], indices = [], uvs = [], submeshInfos = [];;
 
-                async function extractNode(node) {
+
+                    const extractNode = async (node) => {
                     if (!node) return;
                     if (node.model && node.model.submeshes) {
                         for (const sub of node.model.submeshes) {
@@ -1326,12 +1362,9 @@
                             // store texture reference (load or fallback)
                             let tex = null;
                             if (sub.textures) {
-                                try {
-                                    const textures = await Promise.all(sub.textures.map(t => loadTextureFromServer(gl, t)));
-                                    tex = textures[0]; // first texture after resolution
-                                } catch { tex = null; }
+                                tex = await this.loadTextureFromServer(gl, sub.textures, 0);
                             }
-                            submeshTextures.push(tex);
+
 
 
                             const baseIndex = positions.length / 3;
@@ -1350,12 +1383,10 @@
                                         colors.push(c.r ?? 1, c.g ?? 1, c.b ?? 1);
                                     } else colors.push(1.0, 0.6, 0.2);
 
-                                    if (sub.texcoords && sub.texcoords.length > 0) {
-                                        for (const uv of sub.texcoords) {
-                                            uvs.push(uv.u ?? 0, uv.v ?? 0);
-                                        }
+                                    if (sub.uvcoords && sub.uvcoords[i]) {
+                                        uvs.push(sub.uvcoords[i].u ?? 0, sub.uvcoords[i].v ?? 0);
                                     } else {
-                                        for (let i = 0; i < sub.positions.length; i++) uvs.push(0, 0);
+                                        uvs.push(0, 0);
                                     }
 
                                 }
@@ -1462,7 +1493,7 @@ void main() {
     for (int i = 0; i < 6; i++) {
         diff += max(dot(normal, lightDirs[i]), 0.0);
     }
-    diff /= 6.0; // average contribution
+    diff /= 2.0; // average contribution
 
     vec3 ambient = texColor * 0.2; // ambient term
     vec3 color = texColor * diff + ambient;
@@ -1507,9 +1538,10 @@ void main() {
                 const aPos = gl.getAttribLocation(program, 'aPosition');
                 const aNormal = gl.getAttribLocation(program, 'aNormal');
                 const aTex = gl.getAttribLocation(program, 'aTexCoord');
-                gl.enableVertexAttribArray(aTex);
                 gl.enableVertexAttribArray(aPos);
                 gl.enableVertexAttribArray(aNormal);
+                gl.enableVertexAttribArray(aTex);
+
                 const stride = 8 * 4; // 8 floats: pos+normal+uv
                 gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
                 gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
@@ -1593,12 +1625,14 @@ void main() {
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
 
                     let indexType = (positions.length / 3 > 65535) ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+                    const uTexture = gl.getUniformLocation(program, 'uTexture');
 
                     for (const sub of submeshInfos) {
-                        if (sub.texture) {
+                        if (!sub.texture) {
+                        } else {
                             gl.activeTexture(gl.TEXTURE0);
                             gl.bindTexture(gl.TEXTURE_2D, sub.texture);
-                            gl.uniform1i(gl.getUniformLocation(program, 'uTexture'), 0);
+                            gl.uniform1i(uTexture, 0);
                         }
 
                         gl.drawElements(gl.TRIANGLES, sub.indexCount, indexType, sub.indexOffset * indexType.BYTES_PER_ELEMENT);

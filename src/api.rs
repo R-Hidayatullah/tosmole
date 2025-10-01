@@ -364,47 +364,51 @@ pub async fn preview_file(
         };
     }
 
-    // XAC format
-    if ext == "xac" {
-        match crate::xac::XACRoot::from_bytes(&data) {
-            Ok(xac_root) => {
-                // Try to get texture path
-                let texture_path = match mesh_map.get(_full_path) {
-                    Some(path) => path.clone(),
-                    None => {
-                        // Fallback: replace char_hi with char_texture
-                        let fallback = {
-                            // Replace char_hi -> char_texture
-                            let mut path = _full_path.replace("char_hi", "char_texture");
+   // XAC format
+if ext == "xac" {
+    match crate::xac::XACRoot::from_bytes(&data) {
+        Ok(xac_root) => {
+            // Lowercase the lookup key
+            let full_path_lc = _full_path.to_lowercase();
 
-                            // Remove filename, keep folder path only
-                            path = match path.rfind('/') {
-                                Some(idx) => path[..idx].to_string(),
-                                None => path,
-                            };
+            // Try to get texture path
+            let texture_path = match mesh_map.get(&full_path_lc) {
+                Some(path) => path.clone(),
+                None => {
+                    // Fallback: replace char_hi with char_texture
+                    let fallback = {
+                        // Replace char_hi -> char_texture
+                        let mut path = _full_path.replace("char_hi", "char_texture");
 
-                            // Ensure it ends with '/'
-                            if !path.ends_with('/') {
-                                path.push('/');
-                            }
-
-                            path
+                        // Remove filename, keep folder path only
+                        path = match path.rfind('/') {
+                            Some(idx) => path[..idx].to_string(),
+                            None => path,
                         };
 
-                        println!(
-                            "No texture path found for {} — using fallback folder {}",
-                            _full_path, fallback
-                        );
-                        fallback
-                    }
-                };
+                        // Ensure it ends with '/'
+                        if !path.ends_with('/') {
+                            path.push('/');
+                        }
 
-                let scene = crate::mesh::Scene::from_xac_root(&xac_root, texture_path);
-                return HttpResponse::Ok().json(scene);
-            }
-            Err(_) => return HttpResponse::InternalServerError().body("Failed to parse XAC file"),
+                        path
+                    };
+
+                    println!(
+                        "No texture path found for {} — using fallback folder {}",
+                        _full_path, fallback
+                    );
+                    fallback
+                }
+            };
+
+            let scene = crate::mesh::Scene::from_xac_root(&xac_root, texture_path);
+            return HttpResponse::Ok().json(scene);
         }
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to parse XAC file"),
     }
+}
+
 
     // Text-like formats
     let text_extensions = [

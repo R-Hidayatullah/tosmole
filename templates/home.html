@@ -1196,6 +1196,10 @@
                     console.error('WebGL not supported');
                     return;
                 }
+                const ext = gl.getExtension('OES_element_index_uint');
+                if (!ext) {
+                    console.error("Your browser/GPU doesn't support 32-bit indices in WebGL1");
+                }
                 cleanupItems.gl = gl;
 
                 // Initial resize (defer to next frame so layout has settled)
@@ -1277,8 +1281,10 @@
                     vertexData[i * 9 + 8] = colors[i * 3 + 2];
                 }
 
-                //TODO! : Sometimes vertexcount bigger than 65535 but got incorrect model using gl.UNSIGNED_SHORT
-                const indexArray = new Uint16Array(indices);
+                const indexArray = (positions.length / 3 > 65535)
+                    ? new Uint32Array(indices)
+                    : new Uint16Array(indices);
+                const indexType = (indexArray.BYTES_PER_ELEMENT === 2) ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT;
 
                 // --- Shaders (same sources) ---
                 const vsSource = `
@@ -1439,8 +1445,7 @@ void main() {
 
                     gl.uniformMatrix4fv(uMVP, false, mvp);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-                    //TODO! : Sometimes vertexcount bigger than 65535 but got incorrect model using gl.UNSIGNED_SHORT
-                    gl.drawElements(gl.TRIANGLES, indexArray.length, gl.UNSIGNED_SHORT, 0);
+                    gl.drawElements(gl.TRIANGLES, indexArray.length, indexType, 0);
 
                     cleanupItems.rafId = requestAnimationFrame(renderLoop);
                 }

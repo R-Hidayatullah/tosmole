@@ -4,7 +4,7 @@ use actix_web::{App, HttpServer, web};
 use serde::Deserialize;
 use serde_json::from_reader;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs::File,
     io::{self, BufReader},
     path::PathBuf,
@@ -13,6 +13,8 @@ use std::{
 use tera::Tera;
 
 use category::Folder;
+
+use crate::ies::IESRoot;
 
 mod api;
 mod category;
@@ -82,6 +84,34 @@ async fn main() -> io::Result<()> {
     let folder_tree = Arc::new(category::build_tree(grouped));
     println!("IPF parsing completed in {:.2?}", ipf_start.elapsed());
 
+    let xac_ies = folder_tree.search_file_by_full_path("ies_client/xac.ies");
+
+    let mut mesh_map: HashMap<String, String> = HashMap::new();
+
+    if let Some((full_path, file_table)) = xac_ies.last() {
+        println!("IPF Path : {:?}", file_table.file_path);
+        match file_table.extract_data() {
+            Ok(raw_data) => match IESRoot::from_bytes(&raw_data) {
+                Ok(ies_data) => {
+                    mesh_map = ies_data.extract_mesh_path_map();
+                    println!(
+                        "Successfully parsed '{}'! Mesh map contains {} entries.",
+                        full_path,
+                        mesh_map.len()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Failed to parse IESRoot from '{}': {}", full_path, e);
+                }
+            },
+            Err(e) => {
+                eprintln!("Failed to extract data from '{}': {}", full_path, e);
+            }
+        }
+    } else {
+        println!("File 'ies_client/xac.ies' not found!");
+    }
+
     // ---------------------------
     // Parse Language Data
     // ---------------------------
@@ -133,6 +163,7 @@ async fn main() -> io::Result<()> {
     let file_stats = web::Data::new(file_stat_data);
     let tera = Tera::new("templates/**/*").expect("Failed to initialize Tera templates");
     let tera_data = web::Data::new(tera);
+    let mesh_map_data = web::Data::new(mesh_map);
 
     println!("Starting server at http://{}:{} ...\n", addr, port);
 
@@ -143,6 +174,7 @@ async fn main() -> io::Result<()> {
             .app_data(duplicates_data.clone())
             .app_data(tera_data.clone())
             .app_data(file_stats.clone())
+            .app_data(mesh_map_data.clone())
             .configure(api::init_routes)
             .service(web_data::index)
             .service(web_data::home)

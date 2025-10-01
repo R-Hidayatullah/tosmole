@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::xac::{XACAttribute, XACChunk, XACChunkData};
@@ -68,7 +70,7 @@ pub struct Scene {
 
 // --- XAC to Scene converter ---
 impl Scene {
-    pub fn from_xac_root(xac: &crate::xac::XACRoot) -> Self {
+    pub fn from_xac_root(xac: &crate::xac::XACRoot, texture_path: String) -> Self {
         let mut root_nodes = Vec::new();
 
         for entry in &xac.chunks {
@@ -82,7 +84,7 @@ impl Scene {
                         let submeshes = Scene::parse_vertex_data(
                             &mesh.vertex_attribute_layer,
                             &mesh.sub_meshes,
-                            xac.get_texture_names(),
+                            xac.get_texture_names_with_path(texture_path.clone()),
                         );
                         Some(Model {
                             name: String::new(),
@@ -97,7 +99,7 @@ impl Scene {
                         let submeshes = Scene::parse_vertex_data(
                             &mesh.vertex_attribute_layer,
                             &mesh.sub_meshes,
-                            xac.get_texture_names(),
+                            xac.get_texture_names_with_path(texture_path.clone()),
                         );
                         Some(Model {
                             name: String::new(),
@@ -302,9 +304,9 @@ mod tests {
 
         // Load XACRoot from file
         let xac_root = crate::xac::XACRoot::from_file(path)?;
-
+        let texture_path = String::new();
         // Convert to Scene
-        let scene = Scene::from_xac_root(&xac_root);
+        let scene = Scene::from_xac_root(&xac_root, texture_path);
 
         // Debug print
         println!("Scene root nodes: {:?}", scene.root_nodes);
@@ -333,11 +335,12 @@ mod tests {
 
         // Parse XACRoot from bytes
         let xac_root = crate::xac::XACRoot::from_bytes(&data)?;
+        let texture_path = String::new();
 
         println!("Textures Name: {:#?}", xac_root.get_texture_names());
 
         // Convert to Scene
-        let scene = Scene::from_xac_root(&xac_root);
+        let scene = Scene::from_xac_root(&xac_root, texture_path);
 
         // Debug print
         // println!("Scene root nodes: {:?}", scene.root_nodes);

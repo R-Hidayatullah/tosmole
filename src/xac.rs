@@ -1414,6 +1414,14 @@ impl XACRoot {
 
         textures
     }
+
+    /// Returns all texture names with a given path prepended
+    pub fn get_texture_names_with_path(&self, texture_path: String) -> Vec<String> {
+        self.get_texture_names()
+            .iter()
+            .map(|name| format!("{}{}", texture_path, name))
+            .collect()
+    }
 }
 
 #[cfg(test)]

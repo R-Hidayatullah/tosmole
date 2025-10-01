@@ -791,19 +791,19 @@
                     <i class="bi ${iconClass} file-icon ${ext}"></i>
                     <span>${fileName}</span>
                 `;
-element.addEventListener('click', () => {
-    document.querySelectorAll('.tree-item.selected').forEach(item => {
-        item.classList.remove('selected');
-    });
+                element.addEventListener('click', () => {
+                    document.querySelectorAll('.tree-item.selected').forEach(item => {
+                        item.classList.remove('selected');
+                    });
 
-    element.classList.add('selected');
+                    element.classList.add('selected');
 
-    const fullPath = parentPath ? `${parentPath}/${fileName}` : fileName;
-    this.selectedVersion = 0;
+                    const fullPath = parentPath ? `${parentPath}/${fileName}` : fileName;
+                    this.selectedVersion = 0;
 
-    // Just call loadFileInfo (it already updates details + preview)
-    this.loadFileInfo(fullPath);
-});
+                    // Just call loadFileInfo (it already updates details + preview)
+                    this.loadFileInfo(fullPath);
+                });
 
 
                 return element;
@@ -1123,10 +1123,118 @@ element.addEventListener('click', () => {
                     previewContent.innerHTML = ""; // clear DOM
                     abortController = null;
                 };
+
+            }
+
+            async loadTextureFromServer(gl, path, version = 0) {
+                const url = `/api/file/download?path=${encodeURIComponent(path)}&version=${version}`;
+                try {
+                    const resp = await fetch(url);
+                    if (!resp.ok) throw new Error(`Failed to download file: ${resp.status}`);
+                    const arrayBuffer = await resp.arrayBuffer();
+                    const tex = loadTexture(gl, arrayBuffer); // use the loadTexture function we defined
+                    return tex;
+                } catch (err) {
+                    console.error("Error loading texture:", err);
+                    return null;
+                }
             }
 
 
-            renderXACModel(xacData) {
+            loadTexture(gl, source) {
+                const texture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+
+                // Placeholder 1x1 pixel while loading
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0,
+                    gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 0, 255, 255]));
+
+                function setupTexture(width, height, data, compressedFormat = null) {
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+                    if (compressedFormat) {
+                        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, compressedFormat, width, height, 0, data);
+                    } else {
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA,
+                            gl.UNSIGNED_BYTE, data);
+                    }
+
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                }
+
+                // If source is ArrayBuffer, assume DDS
+                if (source instanceof ArrayBuffer) {
+                    try {
+                        const DDS_MAGIC = 0x20534444;
+                        const DDS_DX10 = 0x30315844;
+                        const dds = new DataView(source);
+                        const magic = dds.getUint32(0, true);
+                        if (magic !== DDS_MAGIC) throw new Error('Invalid DDS file');
+
+                        const height = dds.getUint32(12, true);
+                        const width = dds.getUint32(16, true);
+                        const fourCC = dds.getUint32(84, true);
+                        let offset = 128;
+                        let format = null;
+                        let blockSize = 0;
+                        let uncompressed = false;
+                        let bytesPerPixel = 4;
+
+                        if (fourCC === DDS_DX10) {
+                            const dxgiFormat = dds.getUint32(offset, true);
+                            offset += 20;
+                            switch (dxgiFormat) {
+                                case 71: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break;
+                                case 74: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break;
+                                case 77: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break;
+                                default: throw new Error('Unsupported DX10 DDS format');
+                            }
+                        } else {
+                            switch (fourCC) {
+                                case 0x31545844: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break;
+                                case 0x33545844: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break;
+                                case 0x35545844: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break;
+                                case 0: uncompressed = true; bytesPerPixel = dds.getUint32(88, true) / 8; break;
+                                default: throw new Error('Unsupported legacy DDS format');
+                            }
+                        }
+
+                        if (uncompressed) {
+                            const pixelData = new Uint8Array(source, offset, width * height * bytesPerPixel);
+                            setupTexture(width, height, pixelData);
+                        } else {
+                            const ext = gl.getExtension('WEBGL_compressed_texture_s3tc') ||
+                                gl.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
+                                gl.getExtension('WEBKIT_WEBGL_compressed_texture_s3tc');
+                            if (!ext) throw new Error('S3TC not supported');
+
+                            const formatMap = {
+                                'COMPRESSED_RGBA_S3TC_DXT1_EXT': ext.COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                                'COMPRESSED_RGBA_S3TC_DXT3_EXT': ext.COMPRESSED_RGBA_S3TC_DXT3_EXT,
+                                'COMPRESSED_RGBA_S3TC_DXT5_EXT': ext.COMPRESSED_RGBA_S3TC_DXT5_EXT
+                            };
+
+                            const glFormat = formatMap[format];
+                            const imageSize = Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * blockSize;
+                            const texData = new Uint8Array(source, offset, imageSize);
+                            setupTexture(width, height, texData, glFormat);
+                        }
+
+                    } catch (e) {
+                        console.warn('Failed to load DDS texture', e);
+                    }
+                    return texture;
+                }
+
+                return texture;
+            }
+
+
+
+            async renderXACModel(xacData) {
                 const previewContent = document.getElementById('previewContent');
 
                 // If a previous instance created resources, clean them up first
@@ -1203,12 +1311,29 @@ element.addEventListener('click', () => {
 
 
                 // --- Extract mesh data (unchanged logic, just scoped) ---
-                const positions = [], normals = [], colors = [], indices = [];
+                const positions = [], normals = [], colors = [], indices = [], submeshTextures = [], uvs = [], submeshInfos = [];;
 
-                function extractNode(node) {
+                async function extractNode(node) {
                     if (!node) return;
                     if (node.model && node.model.submeshes) {
                         for (const sub of node.model.submeshes) {
+                            // ✅ Only include submesh if it has a name or a texture
+                            if ((!sub.name || sub.name.trim() === "") &&
+                                (!sub.textures || sub.textures.trim() === "")) {
+                                continue; // skip unnamed and texture-less submesh
+                            }
+
+                            // store texture reference (load or fallback)
+                            let tex = null;
+                            if (sub.textures) {
+                                try {
+                                    const textures = await Promise.all(sub.textures.map(t => loadTextureFromServer(gl, t)));
+                                    tex = textures[0]; // first texture after resolution
+                                } catch { tex = null; }
+                            }
+                            submeshTextures.push(tex);
+
+
                             const baseIndex = positions.length / 3;
                             if (sub.positions && sub.positions.length > 0) {
                                 for (let i = 0; i < sub.positions.length; i++) {
@@ -1224,6 +1349,15 @@ element.addEventListener('click', () => {
                                         const c = sub.colors[i];
                                         colors.push(c.r ?? 1, c.g ?? 1, c.b ?? 1);
                                     } else colors.push(1.0, 0.6, 0.2);
+
+                                    if (sub.texcoords && sub.texcoords.length > 0) {
+                                        for (const uv of sub.texcoords) {
+                                            uvs.push(uv.u ?? 0, uv.v ?? 0);
+                                        }
+                                    } else {
+                                        for (let i = 0; i < sub.positions.length; i++) uvs.push(0, 0);
+                                    }
+
                                 }
                             }
                             if (sub.indices && sub.indices.length > 0) {
@@ -1232,13 +1366,20 @@ element.addEventListener('click', () => {
                                 const vertCount = sub.positions ? sub.positions.length : 4;
                                 for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
                             }
+
+                            submeshInfos.push({
+                                texture: tex,
+                                indexOffset: indices.length - (sub.indices ? sub.indices.length : sub.positions.length),
+                                indexCount: sub.indices ? sub.indices.length : sub.positions.length
+                            });
                         }
                     }
-                    if (node.children) for (const child of node.children) extractNode(child);
+                    if (node.children) for (const child of node.children) await extractNode(child);
+
                 }
 
                 if (xacData.root_nodes && xacData.root_nodes.length > 0) {
-                    for (const root of xacData.root_nodes) extractNode(root);
+                    for (const root of xacData.root_nodes) await extractNode(root);
                 } else {
                     positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
                     normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
@@ -1261,18 +1402,19 @@ element.addEventListener('click', () => {
 
                 // --- Interleave vertex data ---
                 const vertexCount = positions.length / 3;
-                const vertexData = new Float32Array(vertexCount * 9);
+                // Assuming vertexData layout: position (3), normal (3), texcoord (2)
+                const vertexData = new Float32Array(vertexCount * 8);
                 for (let i = 0; i < vertexCount; i++) {
-                    vertexData[i * 9 + 0] = positions[i * 3 + 0];
-                    vertexData[i * 9 + 1] = positions[i * 3 + 1];
-                    vertexData[i * 9 + 2] = positions[i * 3 + 2];
-                    vertexData[i * 9 + 3] = normals[i * 3 + 0];
-                    vertexData[i * 9 + 4] = normals[i * 3 + 1];
-                    vertexData[i * 9 + 5] = normals[i * 3 + 2];
-                    vertexData[i * 9 + 6] = colors[i * 3 + 0];
-                    vertexData[i * 9 + 7] = colors[i * 3 + 1];
-                    vertexData[i * 9 + 8] = colors[i * 3 + 2];
+                    vertexData[i * 8 + 0] = positions[i * 3 + 0];
+                    vertexData[i * 8 + 1] = positions[i * 3 + 1];
+                    vertexData[i * 8 + 2] = positions[i * 3 + 2];
+                    vertexData[i * 8 + 3] = normals[i * 3 + 0];
+                    vertexData[i * 8 + 4] = normals[i * 3 + 1];
+                    vertexData[i * 8 + 5] = normals[i * 3 + 2];
+                    vertexData[i * 8 + 6] = uvs[i * 2 + 0] || 0;
+                    vertexData[i * 8 + 7] = uvs[i * 2 + 1] || 0;
                 }
+
 
                 const indexArray = (positions.length / 3 > 65535)
                     ? new Uint32Array(indices)
@@ -1283,41 +1425,51 @@ element.addEventListener('click', () => {
                 const vsSource = `
 attribute vec3 aPosition;
 attribute vec3 aNormal;
-attribute vec3 aColor;
+attribute vec2 aTexCoord;
+varying vec2 vTexCoord;
+varying vec3 vNormal;
+
 uniform mat4 uMVP;
-varying vec3 vColor;
 
 void main() {
     gl_Position = uMVP * vec4(aPosition,1.0);
-
-    // Define 8 directional lights
-    vec3 lightDirs[8];
-    lightDirs[0] = normalize(vec3(1.0, 1.0, 1.0));
-    lightDirs[1] = normalize(vec3(-1.0, 1.0, 1.0));
-    lightDirs[2] = normalize(vec3(1.0, -1.0, 1.0));
-    lightDirs[3] = normalize(vec3(-1.0, -1.0, 1.0));
-    lightDirs[4] = normalize(vec3(1.0, 1.0, -1.0));
-    lightDirs[5] = normalize(vec3(-1.0, 1.0, -1.0));
-    lightDirs[6] = normalize(vec3(1.0, -1.0, -1.0));
-    lightDirs[7] = normalize(vec3(-1.0, -1.0, -1.0));
-
-    float diff = 0.0;
-    for(int i=0; i<8; i++) {
-        diff += max(dot(aNormal, lightDirs[i]), 0.0);
-    }
-    diff = diff / 4.0; // average contribution
-
-    // Final color: ambient + diffuse
-    vColor = aColor * diff + aColor * 0.2;
+    vTexCoord = aTexCoord;
+    vNormal = aNormal;
 }
 `;
 
                 const fsSource = `
 precision mediump float;
-varying vec3 vColor;
+varying vec2 vTexCoord;
+varying vec3 vNormal;
+uniform sampler2D uTexture;
+
 void main() {
-    gl_FragColor = vec4(vColor,1.0);
+    vec3 texColor = texture2D(uTexture, vTexCoord).rgb;
+
+    vec3 normal = normalize(vNormal);
+
+    // Six directional lights (+X, -X, +Y, -Y, +Z, -Z)
+    vec3 lightDirs[6];
+    lightDirs[0] = vec3( 1.0,  0.0,  0.0);
+    lightDirs[1] = vec3(-1.0,  0.0,  0.0);
+    lightDirs[2] = vec3( 0.0,  1.0,  0.0);
+    lightDirs[3] = vec3( 0.0, -1.0,  0.0);
+    lightDirs[4] = vec3( 0.0,  0.0,  1.0);
+    lightDirs[5] = vec3( 0.0,  0.0, -1.0);
+
+    float diff = 0.0;
+    for (int i = 0; i < 6; i++) {
+        diff += max(dot(normal, lightDirs[i]), 0.0);
+    }
+    diff /= 6.0; // average contribution
+
+    vec3 ambient = texColor * 0.2; // ambient term
+    vec3 color = texColor * diff + ambient;
+
+    gl_FragColor = vec4(color, 1.0);
 }
+
 `;
 
                 function compileShader(src, type) {
@@ -1354,14 +1506,15 @@ void main() {
                 // Attribute setup
                 const aPos = gl.getAttribLocation(program, 'aPosition');
                 const aNormal = gl.getAttribLocation(program, 'aNormal');
-                const aCol = gl.getAttribLocation(program, 'aColor');
+                const aTex = gl.getAttribLocation(program, 'aTexCoord');
+                gl.enableVertexAttribArray(aTex);
                 gl.enableVertexAttribArray(aPos);
                 gl.enableVertexAttribArray(aNormal);
-                gl.enableVertexAttribArray(aCol);
-                const stride = 9 * 4;
+                const stride = 8 * 4; // 8 floats: pos+normal+uv
                 gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
                 gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
-                gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, stride, 24);
+                gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, stride, 24);
+
 
                 const uMVP = gl.getUniformLocation(program, 'uMVP');
 
@@ -1435,10 +1588,21 @@ void main() {
                     view = rotateX(view, rotX);
                     view = rotateY(view, rotY);
                     const mvp = multiply(proj, view);
-
                     gl.uniformMatrix4fv(uMVP, false, mvp);
+
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-                    gl.drawElements(gl.TRIANGLES, indexArray.length, indexType, 0);
+
+                    let indexType = (positions.length / 3 > 65535) ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+
+                    for (const sub of submeshInfos) {
+                        if (sub.texture) {
+                            gl.activeTexture(gl.TEXTURE0);
+                            gl.bindTexture(gl.TEXTURE_2D, sub.texture);
+                            gl.uniform1i(gl.getUniformLocation(program, 'uTexture'), 0);
+                        }
+
+                        gl.drawElements(gl.TRIANGLES, sub.indexCount, indexType, sub.indexOffset * indexType.BYTES_PER_ELEMENT);
+                    }
 
                     cleanupItems.rafId = requestAnimationFrame(renderLoop);
                 }
@@ -1462,6 +1626,7 @@ void main() {
                     try {
                         const g = cleanupItems.gl;
                         if (g) {
+                            gl.bindTexture(gl.TEXTURE_2D, null);
                             if (cleanupItems.vbo) { g.deleteBuffer(cleanupItems.vbo); cleanupItems.vbo = null; }
                             if (cleanupItems.ibo) { g.deleteBuffer(cleanupItems.ibo); cleanupItems.ibo = null; }
                             if (cleanupItems.program) {

@@ -2,6 +2,7 @@ use actix_files::NamedFile;
 use actix_web::{HttpResponse, Responder, get, web};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -13,7 +14,7 @@ use crate::ies::IESRoot;
 use crate::ipf::FileSizeStats;
 use crate::ipf::IPFFileTable;
 use crate::xac::XACRoot;
-use crate::xml::{self, DuplicateEntry};
+use crate::xml;
 
 /// -------------------------
 /// Startup Info Endpoint
@@ -37,11 +38,11 @@ pub struct InfoResponse {
 }
 
 pub struct Duplicates {
-    pub xac: Arc<Vec<DuplicateEntry>>,
-    pub xsm: Arc<Vec<DuplicateEntry>>,
-    pub xsmtime: Arc<Vec<DuplicateEntry>>,
-    pub xpm: Arc<Vec<DuplicateEntry>>,
-    pub dds: Arc<Vec<DuplicateEntry>>,
+    pub xac: Arc<HashMap<String, String>>,
+    pub xsm: Arc<HashMap<String, String>>,
+    pub xsmtime: Arc<HashMap<String, String>>,
+    pub xpm: Arc<HashMap<String, String>>,
+    pub dds: Arc<HashMap<String, String>>,
 }
 
 #[get("/api/info")]
@@ -292,6 +293,7 @@ pub struct FilePreviewQuery {
 pub async fn preview_file(
     query: web::Query<FilePreviewQuery>,
     folder_tree: web::Data<Arc<Folder>>,
+    mesh_map: web::Data<HashMap<String, String>>,
 ) -> impl Responder {
     // Find file by full path
     let results = folder_tree.search_file_by_full_path(&query.path);
@@ -366,7 +368,38 @@ pub async fn preview_file(
     if ext == "xac" {
         match crate::xac::XACRoot::from_bytes(&data) {
             Ok(xac_root) => {
-                let scene = crate::mesh::Scene::from_xac_root(&xac_root);
+                // Try to get texture path
+                let texture_path = match mesh_map.get(_full_path) {
+                    Some(path) => path.clone(),
+                    None => {
+                        // Fallback: replace char_hi with char_texture
+                        let fallback = {
+                            // Replace char_hi -> char_texture
+                            let mut path = _full_path.replace("char_hi", "char_texture");
+
+                            // Remove filename, keep folder path only
+                            path = match path.rfind('/') {
+                                Some(idx) => path[..idx].to_string(),
+                                None => path,
+                            };
+
+                            // Ensure it ends with '/'
+                            if !path.ends_with('/') {
+                                path.push('/');
+                            }
+
+                            path
+                        };
+
+                        println!(
+                            "No texture path found for {} — using fallback folder {}",
+                            _full_path, fallback
+                        );
+                        fallback
+                    }
+                };
+
+                let scene = crate::mesh::Scene::from_xac_root(&xac_root, texture_path);
                 return HttpResponse::Ok().json(scene);
             }
             Err(_) => return HttpResponse::InternalServerError().body("Failed to parse XAC file"),

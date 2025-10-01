@@ -1493,7 +1493,7 @@ void main() {
     for (int i = 0; i < 6; i++) {
         diff += max(dot(normal, lightDirs[i]), 0.0);
     }
-    diff /= 2.0; // average contribution
+    diff /= 4.0; // average contribution
 
     vec3 ambient = texColor * 0.2; // ambient term
     vec3 color = texColor * diff + ambient;

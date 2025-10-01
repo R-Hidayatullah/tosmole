@@ -1207,7 +1207,14 @@ impl XACRoot {
             reader.read_exact(&mut chunk_data_buf)?;
 
             // parse chunk_data_buf based on chunk_id
-            let chunk_data = Self::parse_chunk_data(&chunk, &chunk_data_buf).unwrap();
+            let chunk_data = match Self::parse_chunk_data(&chunk, &chunk_data_buf) {
+                Ok(data) => data,
+                Err(e) => {
+                    eprintln!("Failed to parse chunk {}: {:?}", chunk.chunk_id, e);
+                    continue; // skip this chunk
+                }
+            };
+
             reader.seek(SeekFrom::Start(pos + chunk.size_in_bytes as u64))?;
 
             chunks.push(XACChunkEntry { chunk, chunk_data });
@@ -1417,7 +1424,7 @@ mod tests {
     #[test]
     fn test_read_xac_from_memory() -> io::Result<()> {
         // Load file into memory first
-        let data = std::fs::read("tests/archer_m_falconer01.xac")?;
+        let data = std::fs::read("tests/boss_wastrel_set.xac")?;
 
         // Parse from memory instead of directly from file
         let root = XACRoot::from_bytes(&data)?;

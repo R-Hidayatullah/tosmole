@@ -991,27 +991,27 @@
             }
 
 
-         renderFontContent(blob) {
-    const previewContent = document.getElementById('previewContent');
-    previewContent.innerHTML = ''; // clear previous content
+            renderFontContent(blob) {
+                const previewContent = document.getElementById('previewContent');
+                previewContent.innerHTML = ''; // clear previous content
 
-    const fontUrl = URL.createObjectURL(blob);
-    const fontName = 'PreviewFont';
+                const fontUrl = URL.createObjectURL(blob);
+                const fontName = 'PreviewFont';
 
-    // Create @font-face style
-    const style = document.createElement('style');
-    style.innerHTML = `
+                // Create @font-face style
+                const style = document.createElement('style');
+                style.innerHTML = `
         @font-face {
             font-family: '${fontName}';
             src: url('${fontUrl}');
         }
     `;
-    document.head.appendChild(style);
+                document.head.appendChild(style);
 
-    // Create stat-card container
-    const container = document.createElement('div');
-    container.className = 'stat-card';
-    container.style.cssText = `
+                // Create stat-card container
+                const container = document.createElement('div');
+                container.className = 'stat-card';
+                container.style.cssText = `
         padding: 20px;
         background: linear-gradient(135deg, rgba(74, 144, 226, 0.1) 0%, rgba(53, 122, 189, 0.1) 100%);
         border: 1px solid rgba(74, 144, 226, 0.3);
@@ -1025,10 +1025,10 @@
         overflow: hidden;
     `;
 
-    // Create textarea for typing (left)
-    const textarea = document.createElement('textarea');
-    textarea.value = `The quick brown fox jumps over the lazy dog\nType multiple lines here...`;
-    textarea.style.cssText = `
+                // Create textarea for typing (left)
+                const textarea = document.createElement('textarea');
+                textarea.value = `The quick brown fox jumps over the lazy dog\nType multiple lines here...`;
+                textarea.style.cssText = `
         width: 50%;
         height: 100%;
         padding: 8px;
@@ -1038,10 +1038,10 @@
         overflow: auto;
     `;
 
-    // Create preview div (right)
-    const preview = document.createElement('div');
-    preview.textContent = textarea.value;
-    preview.style.cssText = `
+                // Create preview div (right)
+                const preview = document.createElement('div');
+                preview.textContent = textarea.value;
+                preview.style.cssText = `
         font-family: ${fontName};
         font-size: 2rem;
         border: 1px solid #ccc;
@@ -1054,25 +1054,25 @@
         box-sizing: border-box;
     `;
 
-    // Update preview live
-    const onInput = () => {
-        preview.textContent = textarea.value;
-    };
-    textarea.addEventListener('input', onInput);
+                // Update preview live
+                const onInput = () => {
+                    preview.textContent = textarea.value;
+                };
+                textarea.addEventListener('input', onInput);
 
-    // Append elements
-    container.appendChild(textarea);
-    container.appendChild(preview);
-    previewContent.appendChild(container);
+                // Append elements
+                container.appendChild(textarea);
+                container.appendChild(preview);
+                previewContent.appendChild(container);
 
-    // Cleanup
-    this.currentCleanup = () => {
-        textarea.removeEventListener('input', onInput);
-        previewContent.innerHTML = '';
-        if (style.parentNode) style.parentNode.removeChild(style);
-        URL.revokeObjectURL(fontUrl);
-    };
-}
+                // Cleanup
+                this.currentCleanup = () => {
+                    textarea.removeEventListener('input', onInput);
+                    previewContent.innerHTML = '';
+                    if (style.parentNode) style.parentNode.removeChild(style);
+                    URL.revokeObjectURL(fontUrl);
+                };
+            }
 
 
 
@@ -1133,19 +1133,19 @@
             }
 
 
-   renderXACModel(xacData) {
-    const previewContent = document.getElementById('previewContent');
+            renderXACModel(xacData) {
+                const previewContent = document.getElementById('previewContent');
 
-    // If a previous instance created resources, clean them up first
-    if (previewContent._xacCleanup) {
-        try { previewContent._xacCleanup(); } catch (e) { console.warn('cleanup failed', e); }
-        previewContent._xacCleanup = null;
-    }
+                // If a previous instance created resources, clean them up first
+                if (previewContent._xacCleanup) {
+                    try { previewContent._xacCleanup(); } catch (e) { console.warn('cleanup failed', e); }
+                    previewContent._xacCleanup = null;
+                }
 
-    previewContent.classList.add("preview-xac");
+                previewContent.classList.add("preview-xac");
 
-    // Insert canvas in a stat-card container with scoped inline styles
-    previewContent.innerHTML = `
+                // Insert canvas in a stat-card container with scoped inline styles
+                previewContent.innerHTML = `
         <div class="stat-card" 
              style="display:flex; justify-content:center; align-items:center; width:100%; height:70vh;">
             <canvas id="glCanvas" class="rounded shadow" 
@@ -1154,132 +1154,132 @@
         </div>
     `;
 
-    let canvas = document.getElementById('glCanvas');
+                let canvas = document.getElementById('glCanvas');
 
-    // Keep references for cleanup
-    const cleanupItems = {
-        rafId: null,
-        listeners: [],
-        gl: null,
-        vbo: null,
-        ibo: null,
-        vs: null,
-        fs: null,
-        program: null,
-    };
+                // Keep references for cleanup
+                const cleanupItems = {
+                    rafId: null,
+                    listeners: [],
+                    gl: null,
+                    vbo: null,
+                    ibo: null,
+                    vs: null,
+                    fs: null,
+                    program: null,
+                };
 
-    // Resize helper — set drawing buffer size to match displayed size (with HiDPI support)
-    function resizeCanvas() {
-        if (!canvas) return;
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
+                // Resize helper — set drawing buffer size to match displayed size (with HiDPI support)
+                function resizeCanvas() {
+                    if (!canvas) return;
+                    const dpr = window.devicePixelRatio || 1;
+                    const rect = canvas.getBoundingClientRect();
 
-        const w = Math.max(1, Math.floor(rect.width * dpr));
-        const h = Math.max(1, Math.floor(rect.height * dpr));
+                    const w = Math.max(1, Math.floor(rect.width * dpr));
+                    const h = Math.max(1, Math.floor(rect.height * dpr));
 
-        if (canvas.width !== w || canvas.height !== h) {
-            canvas.width = w;
-            canvas.height = h;
-            if (cleanupItems.gl) cleanupItems.gl.viewport(0, 0, w, h);
-        }
-    }
-
-    // Attach a listener and remember it for cleanup
-    function addListener(target, type, fn, opts) {
-        target.addEventListener(type, fn, opts);
-        cleanupItems.listeners.push({ target, type, fn, opts });
-    }
-
-    // --- GL context ---
-    const gl = canvas.getContext('webgl', { preserveDrawingBuffer: false });
-    if (!gl) {
-        console.error('WebGL not supported');
-        return;
-    }
-    cleanupItems.gl = gl;
-
-    // Initial resize (defer to next frame so layout has settled)
-    requestAnimationFrame(resizeCanvas);
-
-    // Watch window resizes
-    addListener(window, 'resize', resizeCanvas);
-
-
-    // --- Extract mesh data (unchanged logic, just scoped) ---
-    const positions = [], normals = [], colors = [], indices = [];
-
-    function extractNode(node) {
-        if (!node) return;
-        if (node.model && node.model.submeshes) {
-            for (const sub of node.model.submeshes) {
-                const baseIndex = positions.length / 3;
-                if (sub.positions && sub.positions.length > 0) {
-                    for (let i = 0; i < sub.positions.length; i++) {
-                        const pos = sub.positions[i];
-                        positions.push(pos.x, pos.y, pos.z);
-
-                        if (sub.normals && sub.normals[i]) {
-                            const n = sub.normals[i];
-                            normals.push(n.x, n.y, n.z);
-                        } else normals.push(0, 0, 1);
-
-                        if (sub.colors && sub.colors[i]) {
-                            const c = sub.colors[i];
-                            colors.push(c.r ?? 1, c.g ?? 1, c.b ?? 1);
-                        } else colors.push(1.0, 0.6, 0.2);
+                    if (canvas.width !== w || canvas.height !== h) {
+                        canvas.width = w;
+                        canvas.height = h;
+                        if (cleanupItems.gl) cleanupItems.gl.viewport(0, 0, w, h);
                     }
                 }
-                if (sub.indices && sub.indices.length > 0) {
-                    for (const idx of sub.indices) indices.push(baseIndex + idx);
-                } else {
-                    const vertCount = sub.positions ? sub.positions.length : 4;
-                    for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
+
+                // Attach a listener and remember it for cleanup
+                function addListener(target, type, fn, opts) {
+                    target.addEventListener(type, fn, opts);
+                    cleanupItems.listeners.push({ target, type, fn, opts });
                 }
-            }
-        }
-        if (node.children) for (const child of node.children) extractNode(child);
-    }
 
-    if (xacData.root_nodes && xacData.root_nodes.length > 0) {
-        for (const root of xacData.root_nodes) extractNode(root);
-    } else {
-        positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
-        normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
-        colors.push(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0);
-        indices.push(0, 1, 2, 2, 3, 0);
-    }
+                // --- GL context ---
+                const gl = canvas.getContext('webgl', { preserveDrawingBuffer: false });
+                if (!gl) {
+                    console.error('WebGL not supported');
+                    return;
+                }
+                cleanupItems.gl = gl;
 
-    // --- Bounding box & view setup (unchanged) ---
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    for (let i = 0; i < positions.length; i += 3) {
-        const x = positions[i], y = positions[i + 1], z = positions[i + 2];
-        minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
-        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
-    }
-    const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2, centerZ = (minZ + maxZ) / 2;
-    const sizeX = maxX - minX, sizeY = maxY - minY, sizeZ = maxZ - minZ;
-    const maxSize = Math.max(sizeX, sizeY, sizeZ) || 1;
-    let distance = maxSize * 1.5;
+                // Initial resize (defer to next frame so layout has settled)
+                requestAnimationFrame(resizeCanvas);
 
-    // --- Interleave vertex data ---
-    const vertexCount = positions.length / 3;
-    const vertexData = new Float32Array(vertexCount * 9);
-    for (let i = 0; i < vertexCount; i++) {
-        vertexData[i * 9 + 0] = positions[i * 3 + 0];
-        vertexData[i * 9 + 1] = positions[i * 3 + 1];
-        vertexData[i * 9 + 2] = positions[i * 3 + 2];
-        vertexData[i * 9 + 3] = normals[i * 3 + 0];
-        vertexData[i * 9 + 4] = normals[i * 3 + 1];
-        vertexData[i * 9 + 5] = normals[i * 3 + 2];
-        vertexData[i * 9 + 6] = colors[i * 3 + 0];
-        vertexData[i * 9 + 7] = colors[i * 3 + 1];
-        vertexData[i * 9 + 8] = colors[i * 3 + 2];
-    }
-    const indexArray = (vertexCount > 65535) ? new Uint32Array(indices) : new Uint16Array(indices);
+                // Watch window resizes
+                addListener(window, 'resize', resizeCanvas);
 
-    // --- Shaders (same sources) ---
-    const vsSource = `
+
+                // --- Extract mesh data (unchanged logic, just scoped) ---
+                const positions = [], normals = [], colors = [], indices = [];
+
+                function extractNode(node) {
+                    if (!node) return;
+                    if (node.model && node.model.submeshes) {
+                        for (const sub of node.model.submeshes) {
+                            const baseIndex = positions.length / 3;
+                            if (sub.positions && sub.positions.length > 0) {
+                                for (let i = 0; i < sub.positions.length; i++) {
+                                    const pos = sub.positions[i];
+                                    positions.push(pos.x, pos.y, pos.z);
+
+                                    if (sub.normals && sub.normals[i]) {
+                                        const n = sub.normals[i];
+                                        normals.push(n.x, n.y, n.z);
+                                    } else normals.push(0, 0, 1);
+
+                                    if (sub.colors && sub.colors[i]) {
+                                        const c = sub.colors[i];
+                                        colors.push(c.r ?? 1, c.g ?? 1, c.b ?? 1);
+                                    } else colors.push(1.0, 0.6, 0.2);
+                                }
+                            }
+                            if (sub.indices && sub.indices.length > 0) {
+                                for (const idx of sub.indices) indices.push(baseIndex + idx);
+                            } else {
+                                const vertCount = sub.positions ? sub.positions.length : 4;
+                                for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
+                            }
+                        }
+                    }
+                    if (node.children) for (const child of node.children) extractNode(child);
+                }
+
+                if (xacData.root_nodes && xacData.root_nodes.length > 0) {
+                    for (const root of xacData.root_nodes) extractNode(root);
+                } else {
+                    positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
+                    normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
+                    colors.push(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0);
+                    indices.push(0, 1, 2, 2, 3, 0);
+                }
+
+                // --- Bounding box & view setup (unchanged) ---
+                let minX = Infinity, minY = Infinity, minZ = Infinity;
+                let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+                for (let i = 0; i < positions.length; i += 3) {
+                    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+                    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+                    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+                }
+                const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2, centerZ = (minZ + maxZ) / 2;
+                const sizeX = maxX - minX, sizeY = maxY - minY, sizeZ = maxZ - minZ;
+                const maxSize = Math.max(sizeX, sizeY, sizeZ) || 1;
+                let distance = maxSize * 1.5;
+
+                // --- Interleave vertex data ---
+                const vertexCount = positions.length / 3;
+                const vertexData = new Float32Array(vertexCount * 9);
+                for (let i = 0; i < vertexCount; i++) {
+                    vertexData[i * 9 + 0] = positions[i * 3 + 0];
+                    vertexData[i * 9 + 1] = positions[i * 3 + 1];
+                    vertexData[i * 9 + 2] = positions[i * 3 + 2];
+                    vertexData[i * 9 + 3] = normals[i * 3 + 0];
+                    vertexData[i * 9 + 4] = normals[i * 3 + 1];
+                    vertexData[i * 9 + 5] = normals[i * 3 + 2];
+                    vertexData[i * 9 + 6] = colors[i * 3 + 0];
+                    vertexData[i * 9 + 7] = colors[i * 3 + 1];
+                    vertexData[i * 9 + 8] = colors[i * 3 + 2];
+                }
+                const indexArray = (vertexCount > 65535) ? new Uint32Array(indices) : new Uint16Array(indices);
+
+                // --- Shaders (same sources) ---
+                const vsSource = `
 attribute vec3 aPosition;
 attribute vec3 aNormal;
 attribute vec3 aColor;
@@ -1311,7 +1311,7 @@ void main() {
 }
 `;
 
-    const fsSource = `
+                const fsSource = `
 precision mediump float;
 varying vec3 vColor;
 void main() {
@@ -1319,174 +1319,174 @@ void main() {
 }
 `;
 
-    function compileShader(src, type) {
-        const s = gl.createShader(type);
-        gl.shaderSource(s, src);
-        gl.compileShader(s);
-        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-            const log = gl.getShaderInfoLog(s);
-            console.error('Shader compile error:', log);
-        }
-        return s;
-    }
-
-    // Create program and buffers
-    const vs = compileShader(vsSource, gl.VERTEX_SHADER);
-    const fs = compileShader(fsSource, gl.FRAGMENT_SHADER);
-    const program = gl.createProgram();
-    if (vs) gl.attachShader(program, vs);
-    if (fs) gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        console.error('Program link error:', gl.getProgramInfoLog(program));
-    }
-    gl.useProgram(program);
-
-    const vbo = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
-
-    const ibo = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
-
-    // Attribute setup
-    const aPos = gl.getAttribLocation(program, 'aPosition');
-    const aNormal = gl.getAttribLocation(program, 'aNormal');
-    const aCol = gl.getAttribLocation(program, 'aColor');
-    gl.enableVertexAttribArray(aPos);
-    gl.enableVertexAttribArray(aNormal);
-    gl.enableVertexAttribArray(aCol);
-    const stride = 9 * 4;
-    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
-    gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
-    gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, stride, 24);
-
-    const uMVP = gl.getUniformLocation(program, 'uMVP');
-
-    // helper matrices (unchanged)
-    function identity() { return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
-    function perspective(fov, aspect, near, far) {
-        const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
-        return new Float32Array([
-            f / aspect, 0, 0, 0,
-            0, f, 0, 0,
-            0, 0, (far + near) * nf, -1,
-            0, 0, (2 * far * near) * nf, 0
-        ]);
-    }
-    function multiply(a, b) {
-        const o = new Float32Array(16);
-        for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
-            o[j * 4 + i] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
-        return o;
-    }
-    function translate(m, x, y, z) { const t = identity(); t[12] = -x; t[13] = -y; t[14] = -z - distance; return multiply(m, t); }
-    function rotateX(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[5] = c; r[6] = s; r[9] = -s; r[10] = c; return multiply(m, r); }
-    function rotateY(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[0] = c; r[2] = s; r[8] = -s; r[10] = c; return multiply(m, r); }
-
-    let rotX = 0, rotY = 0;
-    let mouseDown = false, lastX = 0, lastY = 0;
-
-    // Single set of pointer handlers (no duplicates)
-    addListener(canvas, 'mousedown', e => { mouseDown = true; lastX = e.clientX; lastY = e.clientY; });
-    addListener(window, 'mouseup', () => { mouseDown = false; });
-    addListener(canvas, 'mousemove', e => {
-        if (mouseDown) {
-            rotY -= (e.clientX - lastX) * 0.01;
-            // Update rotX with clamping (same clamp as earlier)
-            rotX += (e.clientY - lastY) * 0.01;
-            const maxRot = Math.PI / 2 - 0.01;
-            if (rotX > maxRot) rotX = maxRot;
-            if (rotX < -maxRot) rotX = -maxRot;
-
-            lastX = e.clientX;
-            lastY = e.clientY;
-        }
-    });
-
-    addListener(canvas, 'wheel', e => {
-        e.preventDefault();
-        const zoomSpeed = 1.02;
-        if (e.deltaY < 0) {
-            distance /= zoomSpeed;
-        } else {
-            distance *= zoomSpeed;
-        }
-        distance = Math.max(maxSize * 0.5, Math.min(maxSize * 10, distance));
-    }, { passive: false });
-
-    // store GL resources for cleanup
-    cleanupItems.vbo = vbo;
-    cleanupItems.ibo = ibo;
-    cleanupItems.vs = vs;
-    cleanupItems.fs = fs;
-    cleanupItems.program = program;
-
-    function renderLoop() {
-        resizeCanvas();
-        gl.clearColor(0.1, 0.1, 0.1, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        gl.enable(gl.DEPTH_TEST);
-
-        const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 30000);
-        let view = translate(identity(), centerX, centerY, centerZ);
-        view = rotateX(view, rotX);
-        view = rotateY(view, rotY);
-        const mvp = multiply(proj, view);
-
-        gl.uniformMatrix4fv(uMVP, false, mvp);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-        gl.drawElements(gl.TRIANGLES, indexArray.length, vertexCount > 65535 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
-
-        cleanupItems.rafId = requestAnimationFrame(renderLoop);
-    }
-
-    renderLoop();
-
-    // Provide a cleanup function so future calls can dispose of resources
-    previewContent._xacCleanup = () => {
-        // Cancel RAF
-        if (cleanupItems.rafId != null) {
-            try { cancelAnimationFrame(cleanupItems.rafId); } catch (e) {}
-            cleanupItems.rafId = null;
-        }
-        // Remove listeners
-        for (const L of cleanupItems.listeners) {
-            try { L.target.removeEventListener(L.type, L.fn, L.opts); } catch (e) {}
-        }
-        cleanupItems.listeners.length = 0;
-
-        // Delete GL resources (if context still available)
-        try {
-            const g = cleanupItems.gl;
-            if (g) {
-                if (cleanupItems.vbo) { g.deleteBuffer(cleanupItems.vbo); cleanupItems.vbo = null; }
-                if (cleanupItems.ibo) { g.deleteBuffer(cleanupItems.ibo); cleanupItems.ibo = null; }
-                if (cleanupItems.program) {
-                    try {
-                        if (cleanupItems.vs) { g.detachShader(cleanupItems.program, cleanupItems.vs); g.deleteShader(cleanupItems.vs); cleanupItems.vs = null; }
-                        if (cleanupItems.fs) { g.detachShader(cleanupItems.program, cleanupItems.fs); g.deleteShader(cleanupItems.fs); cleanupItems.fs = null; }
-                    } catch (e) { /* some browsers throw when detaching */ }
-                    try { g.deleteProgram(cleanupItems.program); } catch (e) {}
-                    cleanupItems.program = null;
+                function compileShader(src, type) {
+                    const s = gl.createShader(type);
+                    gl.shaderSource(s, src);
+                    gl.compileShader(s);
+                    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                        const log = gl.getShaderInfoLog(s);
+                        console.error('Shader compile error:', log);
+                    }
+                    return s;
                 }
+
+                // Create program and buffers
+                const vs = compileShader(vsSource, gl.VERTEX_SHADER);
+                const fs = compileShader(fsSource, gl.FRAGMENT_SHADER);
+                const program = gl.createProgram();
+                if (vs) gl.attachShader(program, vs);
+                if (fs) gl.attachShader(program, fs);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error('Program link error:', gl.getProgramInfoLog(program));
+                }
+                gl.useProgram(program);
+
+                const vbo = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+
+                const ibo = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
+
+                // Attribute setup
+                const aPos = gl.getAttribLocation(program, 'aPosition');
+                const aNormal = gl.getAttribLocation(program, 'aNormal');
+                const aCol = gl.getAttribLocation(program, 'aColor');
+                gl.enableVertexAttribArray(aPos);
+                gl.enableVertexAttribArray(aNormal);
+                gl.enableVertexAttribArray(aCol);
+                const stride = 9 * 4;
+                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
+                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
+                gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, stride, 24);
+
+                const uMVP = gl.getUniformLocation(program, 'uMVP');
+
+                // helper matrices (unchanged)
+                function identity() { return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
+                function perspective(fov, aspect, near, far) {
+                    const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
+                    return new Float32Array([
+                        f / aspect, 0, 0, 0,
+                        0, f, 0, 0,
+                        0, 0, (far + near) * nf, -1,
+                        0, 0, (2 * far * near) * nf, 0
+                    ]);
+                }
+                function multiply(a, b) {
+                    const o = new Float32Array(16);
+                    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
+                        o[j * 4 + i] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
+                    return o;
+                }
+                function translate(m, x, y, z) { const t = identity(); t[12] = -x; t[13] = -y; t[14] = -z - distance; return multiply(m, t); }
+                function rotateX(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[5] = c; r[6] = s; r[9] = -s; r[10] = c; return multiply(m, r); }
+                function rotateY(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[0] = c; r[2] = s; r[8] = -s; r[10] = c; return multiply(m, r); }
+
+                let rotX = 0, rotY = 0;
+                let mouseDown = false, lastX = 0, lastY = 0;
+
+                // Single set of pointer handlers (no duplicates)
+                addListener(canvas, 'mousedown', e => { mouseDown = true; lastX = e.clientX; lastY = e.clientY; });
+                addListener(window, 'mouseup', () => { mouseDown = false; });
+                addListener(canvas, 'mousemove', e => {
+                    if (mouseDown) {
+                        rotY -= (e.clientX - lastX) * 0.01;
+                        // Update rotX with clamping (same clamp as earlier)
+                        rotX += (e.clientY - lastY) * 0.01;
+                        const maxRot = Math.PI / 2 - 0.01;
+                        if (rotX > maxRot) rotX = maxRot;
+                        if (rotX < -maxRot) rotX = -maxRot;
+
+                        lastX = e.clientX;
+                        lastY = e.clientY;
+                    }
+                });
+
+                addListener(canvas, 'wheel', e => {
+                    e.preventDefault();
+                    const zoomSpeed = 1.02;
+                    if (e.deltaY < 0) {
+                        distance /= zoomSpeed;
+                    } else {
+                        distance *= zoomSpeed;
+                    }
+                    distance = Math.max(maxSize * 0.5, Math.min(maxSize * 10, distance));
+                }, { passive: false });
+
+                // store GL resources for cleanup
+                cleanupItems.vbo = vbo;
+                cleanupItems.ibo = ibo;
+                cleanupItems.vs = vs;
+                cleanupItems.fs = fs;
+                cleanupItems.program = program;
+
+                function renderLoop() {
+                    resizeCanvas();
+                    gl.clearColor(0.1, 0.1, 0.1, 1);
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                    gl.enable(gl.DEPTH_TEST);
+
+                    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 30000);
+                    let view = translate(identity(), centerX, centerY, centerZ);
+                    view = rotateX(view, rotX);
+                    view = rotateY(view, rotY);
+                    const mvp = multiply(proj, view);
+
+                    gl.uniformMatrix4fv(uMVP, false, mvp);
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+                    gl.drawElements(gl.TRIANGLES, indexArray.length, vertexCount > 65535 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+
+                    cleanupItems.rafId = requestAnimationFrame(renderLoop);
+                }
+
+                renderLoop();
+
+                // Provide a cleanup function so future calls can dispose of resources
+                previewContent._xacCleanup = () => {
+                    // Cancel RAF
+                    if (cleanupItems.rafId != null) {
+                        try { cancelAnimationFrame(cleanupItems.rafId); } catch (e) { }
+                        cleanupItems.rafId = null;
+                    }
+                    // Remove listeners
+                    for (const L of cleanupItems.listeners) {
+                        try { L.target.removeEventListener(L.type, L.fn, L.opts); } catch (e) { }
+                    }
+                    cleanupItems.listeners.length = 0;
+
+                    // Delete GL resources (if context still available)
+                    try {
+                        const g = cleanupItems.gl;
+                        if (g) {
+                            if (cleanupItems.vbo) { g.deleteBuffer(cleanupItems.vbo); cleanupItems.vbo = null; }
+                            if (cleanupItems.ibo) { g.deleteBuffer(cleanupItems.ibo); cleanupItems.ibo = null; }
+                            if (cleanupItems.program) {
+                                try {
+                                    if (cleanupItems.vs) { g.detachShader(cleanupItems.program, cleanupItems.vs); g.deleteShader(cleanupItems.vs); cleanupItems.vs = null; }
+                                    if (cleanupItems.fs) { g.detachShader(cleanupItems.program, cleanupItems.fs); g.deleteShader(cleanupItems.fs); cleanupItems.fs = null; }
+                                } catch (e) { /* some browsers throw when detaching */ }
+                                try { g.deleteProgram(cleanupItems.program); } catch (e) { }
+                                cleanupItems.program = null;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('GL cleanup error', e);
+                    }
+
+                    // Clear canvas and remove DOM nodes if desired (kept minimal)
+                    // previewContent.innerHTML = ''; // if you want to fully remove canvas output
+                };
+
+                // (Optional) Also cleanup when the canvas context is lost
+                function onContextLost(ev) {
+                    ev.preventDefault();
+                    if (previewContent._xacCleanup) previewContent._xacCleanup();
+                }
+                addListener(canvas, 'webglcontextlost', onContextLost);
             }
-        } catch (e) {
-            console.warn('GL cleanup error', e);
-        }
-
-        // Clear canvas and remove DOM nodes if desired (kept minimal)
-        // previewContent.innerHTML = ''; // if you want to fully remove canvas output
-    };
-
-    // (Optional) Also cleanup when the canvas context is lost
-    function onContextLost(ev) {
-        ev.preventDefault();
-        if (previewContent._xacCleanup) previewContent._xacCleanup();
-    }
-    addListener(canvas, 'webglcontextlost', onContextLost);
-}
 
 
             renderIESTable(iesData) {
@@ -1815,8 +1815,8 @@ ${this.escapeHtml(text)}
                     }
 
                     // Setup canvas
-           // Setup stat card container
-previewContent.innerHTML = `
+                    // Setup stat card container
+                    previewContent.innerHTML = `
     <div class="stat-card">
         <div class="text-center">
             <canvas id="ddsCanvas" class="rounded shadow" 
@@ -1826,9 +1826,9 @@ previewContent.innerHTML = `
     </div>
 `;
 
-canvas = document.getElementById('ddsCanvas');
-canvas.width = width;
-canvas.height = height;
+                    canvas = document.getElementById('ddsCanvas');
+                    canvas.width = width;
+                    canvas.height = height;
 
                     gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
                     if (!gl) throw new Error('WebGL not supported');

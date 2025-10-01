@@ -1488,100 +1488,90 @@ void main() {
     addListener(canvas, 'webglcontextlost', onContextLost);
 }
 
-renderIESTable(iesData) {
-    const previewContent = document.getElementById('previewContent');
 
-    if (!iesData.data || iesData.data.length === 0) {
-        previewContent.innerHTML = '<div class="text-light text-center p-4">No data available</div>';
-        return;
-    }
+            renderIESTable(iesData) {
+                const previewContent = document.getElementById('previewContent');
 
-    // Sort columns first by decl_idx, then by type_data
-    let sortedColumn = [...iesData.columns]
-        .sort((a, b) => a.decl_idx - b.decl_idx)
-        .sort((a, b) => a.type_data - b.type_data);
+                if (!iesData.data || iesData.data.length === 0) {
+                    previewContent.innerHTML = '<div class="text-light text-center p-4">No data available</div>';
+                    return;
+                }
 
-    // Build headers
-    const headers = sortedColumn
-        .map(col => col.name || col.column)
-        .filter(name => name.trim());
+                // Sort columns first by decl_idx, then by type_data
+                let sortedColumn = [...iesData.columns]
+                    .sort((a, b) => a.decl_idx - b.decl_idx)
+                    .sort((a, b) => a.type_data - b.type_data);
 
-    let tableHTML = `
-<div class="ies-table">
-    <div class="mb-3">
-        <h4 class="text-center text-light">IES Filename : ${iesData.header.idspace}</h4>
-        <small class="text-muted">
-            Version: ${iesData.header.version} | 
-            Fields: ${iesData.header.num_field} | 
-            Columns: ${iesData.header.num_column}
-        </small>
-    </div>
-    <div class="table-responsive" style="overflow:auto; max-height:70vh;">
-        <table class="table table-sm table-dark table-striped table-bordered align-middle text-center">
-            <thead class="table-secondary text-dark sticky-top">
-                <tr>
-                    <th scope="col" class="align-middle sticky-col" style="left:0; z-index:3;">Row Number</th>
-                    <th scope="col" class="align-middle sticky-col" style="left:60px; z-index:3;">Index Number</th>
-                    <th scope="col" class="align-middle sticky-col" style="left:120px; z-index:3;">Index</th>`;
+                // Build headers
+                const headers = sortedColumn
+                    .map(col => col.name || col.column)
+                    .filter(name => name.trim());
 
-    headers.forEach((header, idx) => {
-        tableHTML += `<th scope="col" class="align-middle">${header}</th>`;
-    });
+                let tableHTML = `
+    <div class="ies-table">
+        <div class="mb-3">
+            <h4 class="text-center text-light">IES Filename : ${iesData.header.idspace}</h4>
+            <small class="text-muted">
+                Version: ${iesData.header.version} | 
+                Fields: ${iesData.header.num_field} | 
+                Columns: ${iesData.header.num_column}
+            </small>
+        </div>
+        <div class="table-responsive" style="overflow:auto;">
+            <table class="table table-sm table-dark table-striped table-bordered align-middle text-center">
+                <thead class="table-secondary text-dark sticky-top">
+                    <tr>
+                        <th scope="col" class="align-middle">Row Number</th>
+                        <th scope="col" class="align-middle">Index Number</th>
+                        <th scope="col" class="align-middle">Index</th>`;
 
-    tableHTML += `
-                </tr>
-            </thead>
-            <tbody>
+                headers.forEach(header => {
+                    tableHTML += `<th scope="col" class="align-middle">${header}</th>`;
+                });
+
+                tableHTML += `
+                    </tr>
+                </thead>
+                <tbody>
     `;
 
-    let numberRow = 1;
-    iesData.data.forEach((row) => {
-        tableHTML += `<tr>
+                let numberRow = 1;
+                iesData.data.forEach((row) => {
+                    tableHTML += `<tr>
             <td>${numberRow}</td>
             <td>${row.index_data ?? ''}</td>
             <td>${row.row_text ? row.row_text.text_data : ''}</td>`;
 
-        if (row.floats) {
-            row.floats.forEach(f => {
-                tableHTML += `<td>${f.float_data}</td>`;
-            });
-        }
+                    if (row.floats) {
+                        row.floats.forEach(f => {
+                            tableHTML += `<td>${f.float_data}</td>`;
+                        });
+                    }
 
-        if (row.texts) {
-            row.texts.forEach(t => {
-                tableHTML += `<td>${t.text_data}</td>`;
-            });
-        }
+                    if (row.texts) {
+                        row.texts.forEach(t => {
+                            tableHTML += `<td>${t.text_data}</td>`;
+                        });
+                    }
 
-        tableHTML += `</tr>`;
-        numberRow++;
-    });
+                    tableHTML += `</tr>`;
+                    numberRow++;
+                });
 
-    tableHTML += `
-            </tbody>
-        </table>
+                tableHTML += `
+                </tbody>
+            </table>
+        </div>
     </div>
-</div>
-`;
-
-    previewContent.innerHTML = tableHTML;
-
-    // Add CSS for sticky columns
-    const style = document.createElement('style');
-    style.textContent = `
-        .sticky-col {
-            position: sticky;
-        }
     `;
-    document.head.appendChild(style);
 
-    // Cleanup
-    this.currentCleanup = () => {
-        previewContent.innerHTML = "";
-        if (style.parentNode) style.parentNode.removeChild(style);
-    };
-}
+                previewContent.innerHTML = tableHTML;
 
+                // Proper cleanup
+                this.currentCleanup = () => {
+                    previewContent.innerHTML = "";
+                };
+            }
 
 
 

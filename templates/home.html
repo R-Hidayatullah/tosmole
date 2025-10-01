@@ -991,70 +991,89 @@
             }
 
 
-            renderFontContent(blob) {
+         renderFontContent(blob) {
+    const previewContent = document.getElementById('previewContent');
+    previewContent.innerHTML = ''; // clear previous content
 
-                const previewContent = document.getElementById('previewContent');
-                previewContent.innerHTML = ''; // clear previous content
+    const fontUrl = URL.createObjectURL(blob);
+    const fontName = 'PreviewFont';
 
-                // Create a URL for the font file
-                const fontUrl = URL.createObjectURL(blob);
-                const fontName = 'PreviewFont';
-
-                // Create @font-face style
-                const style = document.createElement('style');
-                style.innerHTML = `
+    // Create @font-face style
+    const style = document.createElement('style');
+    style.innerHTML = `
         @font-face {
             font-family: '${fontName}';
             src: url('${fontUrl}');
         }
     `;
-                document.head.appendChild(style);
+    document.head.appendChild(style);
 
-                // Create a text input for live preview
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.value = 'The quick brown fox jumps over the lazy dog';
-                input.style.width = '100%';
-                input.style.marginBottom = '10px';
-                input.style.padding = '8px';
-                input.style.fontSize = '1.2rem';
+    // Create stat-card container
+    const container = document.createElement('div');
+    container.className = 'stat-card';
+    container.style.cssText = `
+        padding: 20px;
+        background: linear-gradient(135deg, rgba(74, 144, 226, 0.1) 0%, rgba(53, 122, 189, 0.1) 100%);
+        border: 1px solid rgba(74, 144, 226, 0.3);
+        border-radius: 12px;
+        max-width: 100%;
+        height: 70vh;
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+        box-sizing: border-box;
+        overflow: hidden;
+    `;
 
-                // Create preview div
-                const preview = document.createElement('div');
-                preview.textContent = input.value;
-                preview.style.fontFamily = fontName;
-                preview.style.fontSize = '2rem';
-                preview.style.border = '1px solid #ccc';
-                preview.style.padding = '20px';
-                preview.style.marginTop = '10px';
+    // Create textarea for typing (left)
+    const textarea = document.createElement('textarea');
+    textarea.value = `The quick brown fox jumps over the lazy dog\nType multiple lines here...`;
+    textarea.style.cssText = `
+        width: 50%;
+        height: 100%;
+        padding: 8px;
+        font-size: 1.2rem;
+        resize: none;
+        box-sizing: border-box;
+        overflow: auto;
+    `;
 
-                // Update preview as user types
-                input.addEventListener('input', () => {
-                    preview.textContent = input.value;
-                });
+    // Create preview div (right)
+    const preview = document.createElement('div');
+    preview.textContent = textarea.value;
+    preview.style.cssText = `
+        font-family: ${fontName};
+        font-size: 2rem;
+        border: 1px solid #ccc;
+        padding: 20px;
+        width: 50%;
+        height: 100%;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        box-sizing: border-box;
+    `;
 
-                previewContent.appendChild(input);
-                previewContent.appendChild(preview);
+    // Update preview live
+    const onInput = () => {
+        preview.textContent = textarea.value;
+    };
+    textarea.addEventListener('input', onInput);
 
-                // Cleanup
-                this.currentCleanup = () => {
-                    // Remove input event listener
-                    input.removeEventListener('input', () => {
-                        preview.textContent = input.value;
-                    });
+    // Append elements
+    container.appendChild(textarea);
+    container.appendChild(preview);
+    previewContent.appendChild(container);
 
-                    // Clear DOM
-                    previewContent.innerHTML = "";
+    // Cleanup
+    this.currentCleanup = () => {
+        textarea.removeEventListener('input', onInput);
+        previewContent.innerHTML = '';
+        if (style.parentNode) style.parentNode.removeChild(style);
+        URL.revokeObjectURL(fontUrl);
+    };
+}
 
-                    // Remove style
-                    if (style.parentNode) {
-                        style.parentNode.removeChild(style);
-                    }
-
-                    // Revoke font URL
-                    URL.revokeObjectURL(fontUrl);
-                };
-            }
 
 
 
@@ -1469,90 +1488,100 @@ void main() {
     addListener(canvas, 'webglcontextlost', onContextLost);
 }
 
+renderIESTable(iesData) {
+    const previewContent = document.getElementById('previewContent');
 
-            renderIESTable(iesData) {
-                const previewContent = document.getElementById('previewContent');
+    if (!iesData.data || iesData.data.length === 0) {
+        previewContent.innerHTML = '<div class="text-light text-center p-4">No data available</div>';
+        return;
+    }
 
-                if (!iesData.data || iesData.data.length === 0) {
-                    previewContent.innerHTML = '<div class="text-light text-center p-4">No data available</div>';
-                    return;
-                }
+    // Sort columns first by decl_idx, then by type_data
+    let sortedColumn = [...iesData.columns]
+        .sort((a, b) => a.decl_idx - b.decl_idx)
+        .sort((a, b) => a.type_data - b.type_data);
 
-                // Sort columns first by decl_idx, then by type_data
-                let sortedColumn = [...iesData.columns]
-                    .sort((a, b) => a.decl_idx - b.decl_idx)
-                    .sort((a, b) => a.type_data - b.type_data);
+    // Build headers
+    const headers = sortedColumn
+        .map(col => col.name || col.column)
+        .filter(name => name.trim());
 
-                // Build headers
-                const headers = sortedColumn
-                    .map(col => col.name || col.column)
-                    .filter(name => name.trim());
+    let tableHTML = `
+<div class="ies-table">
+    <div class="mb-3">
+        <h4 class="text-center text-light">IES Filename : ${iesData.header.idspace}</h4>
+        <small class="text-muted">
+            Version: ${iesData.header.version} | 
+            Fields: ${iesData.header.num_field} | 
+            Columns: ${iesData.header.num_column}
+        </small>
+    </div>
+    <div class="table-responsive" style="overflow:auto; max-height:70vh;">
+        <table class="table table-sm table-dark table-striped table-bordered align-middle text-center">
+            <thead class="table-secondary text-dark sticky-top">
+                <tr>
+                    <th scope="col" class="align-middle sticky-col" style="left:0; z-index:3;">Row Number</th>
+                    <th scope="col" class="align-middle sticky-col" style="left:60px; z-index:3;">Index Number</th>
+                    <th scope="col" class="align-middle sticky-col" style="left:120px; z-index:3;">Index</th>`;
 
-                let tableHTML = `
-    <div class="ies-table">
-        <div class="mb-3">
-            <h4 class="text-center text-light">IES Filename : ${iesData.header.idspace}</h4>
-            <small class="text-muted">
-                Version: ${iesData.header.version} | 
-                Fields: ${iesData.header.num_field} | 
-                Columns: ${iesData.header.num_column}
-            </small>
-        </div>
-        <div class="table-responsive" style="overflow:auto;">
-            <table class="table table-sm table-dark table-striped table-bordered align-middle text-center">
-                <thead class="table-secondary text-dark sticky-top">
-                    <tr>
-                        <th scope="col" class="align-middle">Row Number</th>
-                        <th scope="col" class="align-middle">Index Number</th>
-                        <th scope="col" class="align-middle">Index</th>`;
+    headers.forEach((header, idx) => {
+        tableHTML += `<th scope="col" class="align-middle">${header}</th>`;
+    });
 
-                headers.forEach(header => {
-                    tableHTML += `<th scope="col" class="align-middle">${header}</th>`;
-                });
-
-                tableHTML += `
-                    </tr>
-                </thead>
-                <tbody>
+    tableHTML += `
+                </tr>
+            </thead>
+            <tbody>
     `;
 
-                let numberRow = 1;
-                iesData.data.forEach((row) => {
-                    tableHTML += `<tr>
+    let numberRow = 1;
+    iesData.data.forEach((row) => {
+        tableHTML += `<tr>
             <td>${numberRow}</td>
             <td>${row.index_data ?? ''}</td>
             <td>${row.row_text ? row.row_text.text_data : ''}</td>`;
 
-                    if (row.floats) {
-                        row.floats.forEach(f => {
-                            tableHTML += `<td>${f.float_data}</td>`;
-                        });
-                    }
+        if (row.floats) {
+            row.floats.forEach(f => {
+                tableHTML += `<td>${f.float_data}</td>`;
+            });
+        }
 
-                    if (row.texts) {
-                        row.texts.forEach(t => {
-                            tableHTML += `<td>${t.text_data}</td>`;
-                        });
-                    }
+        if (row.texts) {
+            row.texts.forEach(t => {
+                tableHTML += `<td>${t.text_data}</td>`;
+            });
+        }
 
-                    tableHTML += `</tr>`;
-                    numberRow++;
-                });
+        tableHTML += `</tr>`;
+        numberRow++;
+    });
 
-                tableHTML += `
-                </tbody>
-            </table>
-        </div>
+    tableHTML += `
+            </tbody>
+        </table>
     </div>
+</div>
+`;
+
+    previewContent.innerHTML = tableHTML;
+
+    // Add CSS for sticky columns
+    const style = document.createElement('style');
+    style.textContent = `
+        .sticky-col {
+            position: sticky;
+        }
     `;
+    document.head.appendChild(style);
 
-                previewContent.innerHTML = tableHTML;
+    // Cleanup
+    this.currentCleanup = () => {
+        previewContent.innerHTML = "";
+        if (style.parentNode) style.parentNode.removeChild(style);
+    };
+}
 
-                // Proper cleanup
-                this.currentCleanup = () => {
-                    previewContent.innerHTML = "";
-                };
-            }
 
 
 

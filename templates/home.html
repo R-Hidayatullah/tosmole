@@ -992,6 +992,7 @@
 
 
             renderFontContent(blob) {
+
                 const previewContent = document.getElementById('previewContent');
                 previewContent.innerHTML = ''; // clear previous content
 
@@ -1034,16 +1035,39 @@
 
                 previewContent.appendChild(input);
                 previewContent.appendChild(preview);
+
+                // Cleanup
+                this.currentCleanup = () => {
+                    // Remove input event listener
+                    input.removeEventListener('input', () => {
+                        preview.textContent = input.value;
+                    });
+
+                    // Clear DOM
+                    previewContent.innerHTML = "";
+
+                    // Remove style
+                    if (style.parentNode) {
+                        style.parentNode.removeChild(style);
+                    }
+
+                    // Revoke font URL
+                    URL.revokeObjectURL(fontUrl);
+                };
             }
 
 
 
             renderBinaryContent(filePath, version = 0, maxBytes = 1024) {
+
                 const previewContent = document.getElementById('previewContent');
                 const fileName = filePath.split('/').pop();
 
-                // Fetch the binary data from your API
-                fetch(`/api/file/preview?path=${encodeURIComponent(filePath)}&version=${version}`)
+                let abortController = new AbortController(); // for possible cancellation
+
+                fetch(`/api/file/preview?path=${encodeURIComponent(filePath)}&version=${version}`, {
+                    signal: abortController.signal
+                })
                     .then(res => {
                         if (!res.ok) throw new Error('Failed to load file');
                         return res.arrayBuffer();
@@ -1052,18 +1076,15 @@
                         const bytes = new Uint8Array(buffer);
                         const length = Math.min(bytes.length, maxBytes);
 
-                        // Convert to hex string
+                        // Convert to hex + ASCII string
                         let hex = '';
                         for (let i = 0; i < length; i += 16) {
                             const row = bytes.slice(i, i + 16);
                             const hexBytes = Array.from(row).map(b => b.toString(16).padStart(2, '0')).join(' ');
-                            const ascii = Array.from(row).map(b => {
-                                return b >= 32 && b <= 126 ? String.fromCharCode(b) : '.';
-                            }).join('');
+                            const ascii = Array.from(row).map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')).join('');
                             hex += hexBytes.padEnd(16 * 3) + '  ' + ascii + '\n';
                         }
 
-                        // Render
                         previewContent.innerHTML = `
 <div class="bg-dark p-3 rounded" style="background-color: rgba(0,0,0,0.5); overflow: auto;">
     <pre style="color: #ffffff; font-family: monospace; margin: 0;">${hex}</pre>
@@ -1073,7 +1094,6 @@
 </div>`;
                     })
                     .catch(err => {
-                        // Fallback: show warning
                         previewContent.innerHTML = `
 <div class="bg-dark p-4 rounded text-center" 
      style="background-color: rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
@@ -1083,12 +1103,18 @@
 </div>`;
                         console.error(err);
                     });
+
+                // Cleanup
+                this.currentCleanup = () => {
+                    // abort any ongoing fetch
+                    abortController.abort();
+                    previewContent.innerHTML = ""; // clear DOM
+                    abortController = null;
+                };
             }
 
 
-
             renderXACModel(xacData) {
-
                 const previewContent = document.getElementById('previewContent');
                 previewContent.classList.add("preview-xac");
 
@@ -1359,7 +1385,6 @@ void main() {
 
             }
 
-
             renderIESTable(iesData) {
                 const previewContent = document.getElementById('previewContent');
 
@@ -1368,62 +1393,57 @@ void main() {
                     return;
                 }
 
-                let sortedColumn = [...iesData.columns].sort((a, b) => a.decl_idx - b.decl_idx);
-                sortedColumn = sortedColumn.sort((a, b) => a.type_data - b.type_data);
+                // Sort columns first by decl_idx, then by type_data
+                let sortedColumn = [...iesData.columns]
+                    .sort((a, b) => a.decl_idx - b.decl_idx)
+                    .sort((a, b) => a.type_data - b.type_data);
 
-                // Create table header from columns
-                const headers = sortedColumn.map(col => col.name || col.column).filter(name => name.trim());
+                // Build headers
+                const headers = sortedColumn
+                    .map(col => col.name || col.column)
+                    .filter(name => name.trim());
 
                 let tableHTML = `
-<div class="ies-table">
-    <div class="mb-3">
-        <br>
-        <h4 class="text-center text-light">IES Filename : ${iesData.header.idspace}</h4>
-        <small class="text-muted">
-            Version: ${iesData.header.version} | 
-            Fields: ${iesData.header.num_field} | 
-            Columns: ${iesData.header.num_column}
-        </small>
-    </div>
-    <div class="table-responsive">
+    <div class="ies-table">
+        <div class="mb-3">
+            <h4 class="text-center text-light">IES Filename : ${iesData.header.idspace}</h4>
+            <small class="text-muted">
+                Version: ${iesData.header.version} | 
+                Fields: ${iesData.header.num_field} | 
+                Columns: ${iesData.header.num_column}
+            </small>
+        </div>
+        <div class="table-responsive" style="max-height:600px; overflow:auto;">
             <table class="table table-sm table-dark table-striped table-bordered align-middle text-center">
-            <thead class="table-secondary text-dark">
-                <tr>
-                    <th scope="col" class="align-middle">Row Number</th>
-                    <th scope="col" class="align-middle">Index Number</th>
-                    <th scope="col" class="align-middle">Index</th>
-`;
+                <thead class="table-secondary text-dark sticky-top">
+                    <tr>
+                        <th scope="col" class="align-middle">Row Number</th>
+                        <th scope="col" class="align-middle">Index Number</th>
+                        <th scope="col" class="align-middle">Index</th>`;
 
                 headers.forEach(header => {
                     tableHTML += `<th scope="col" class="align-middle">${header}</th>`;
                 });
 
                 tableHTML += `
-                </tr>
-            </thead>
-            <tbody>
-`;
+                    </tr>
+                </thead>
+                <tbody>
+    `;
 
                 let numberRow = 1;
-                // Add sorted data rows
-                iesData.data.forEach((row, index) => {
-                    tableHTML += `<tr><td>${numberRow}</td>`;
+                iesData.data.forEach((row) => {
+                    tableHTML += `<tr>
+            <td>${numberRow}</td>
+            <td>${row.index_data ?? ''}</td>
+            <td>${row.row_text ? row.row_text.text_data : ''}</td>`;
 
-                    tableHTML += `<td>${row.index_data}</td>`;
-
-                    // Add row text data
-                    if (row.row_text) {
-                        tableHTML += `<td>${row.row_text.text_data}</td>`;
-                    }
-
-                    // Add float data
                     if (row.floats) {
                         row.floats.forEach(f => {
                             tableHTML += `<td>${f.float_data}</td>`;
                         });
                     }
 
-                    // Add text data
                     if (row.texts) {
                         row.texts.forEach(t => {
                             tableHTML += `<td>${t.text_data}</td>`;
@@ -1435,17 +1455,24 @@ void main() {
                 });
 
                 tableHTML += `
-            </tbody>
-        </table>
+                </tbody>
+            </table>
+        </div>
     </div>
-</div>
-`;
+    `;
 
                 previewContent.innerHTML = tableHTML;
+
+                // Proper cleanup
+                this.currentCleanup = () => {
+                    previewContent.innerHTML = "";
+                };
             }
 
 
+
             renderTextContent(text, filePath) {
+
                 const previewContent = document.getElementById('previewContent');
                 const extension = filePath.split('.').pop().toLowerCase();
 
@@ -1473,7 +1500,6 @@ void main() {
                     // JSON files
                     json: 'json',
 
-
                     // Lua files
                     lua: 'lua',
 
@@ -1484,36 +1510,46 @@ void main() {
 
                 const prismLang = extensionMap[extension] || 'none';
 
-
-                previewContent.innerHTML = `<div class="bg-dark p-3 rounded" style="background-color: rgba(0,0,0,0.5) !important;">
-<pre style="color: #ffffff; margin: 0; white-space: pre-wrap; word-wrap: break-word;">
-<code class="${prismLang !== 'none' ? 'language-' + prismLang : ''}">${this.escapeHtml(text)}</code>
-</pre>
-</div>`;
-
+                previewContent.innerHTML = `
+        <div class="bg-dark p-3 rounded" 
+             style="background-color: rgba(0,0,0,0.5) !important; max-height: 500px; overflow:auto;">
+            <pre style="color: #ffffff; margin: 0; white-space: pre-wrap; word-wrap: break-word;">
+                <code class="${prismLang !== 'none' ? 'language-' + prismLang : ''}">
+${this.escapeHtml(text)}
+                </code>
+            </pre>
+        </div>
+    `;
 
                 // Apply Prism highlighting if language is not plain text
                 if (window.Prism && prismLang !== 'none') {
                     Prism.highlightAllUnder(previewContent);
                 }
+
+                // Proper cleanup
+                this.currentCleanup = () => {
+                    previewContent.innerHTML = "";
+                };
             }
 
+
             renderMP3Audio(blob) {
+
                 const previewContent = document.getElementById('previewContent');
                 const audioUrl = URL.createObjectURL(blob);
 
                 previewContent.innerHTML = `
-                    <div class="stat-card">
-        <div class="text-center">
-            <audio controls class="w-100 mt-3 shadow rounded">
-                <source src="${audioUrl}" type="${blob.type || 'audio/mpeg'}">
-                Your browser does not support the audio element.
-            </audio>
-        </div>
+        <div class="stat-card">
+            <div class="text-center">
+                <audio controls class="w-100 mt-3 shadow rounded">
+                    <source src="${audioUrl}" type="${blob.type || 'audio/mpeg'}">
+                    Your browser does not support the audio element.
+                </audio>
+            </div>
         </div>
     `;
 
-                // Add debug info (like you do for images)
+                // Add debug info
                 const debugInfo = document.createElement('div');
                 debugInfo.className = 'mt-3 p-3';
                 debugInfo.style.background = 'rgba(255, 255, 255, 0.05)';
@@ -1529,11 +1565,21 @@ void main() {
     `;
                 previewContent.appendChild(debugInfo);
 
-                // Load audio metadata to display duration
+                // Get audio element and load metadata
                 const audioElement = previewContent.querySelector('audio');
                 audioElement.onloadedmetadata = () => {
                     const durationElem = document.getElementById('audioDuration');
                     durationElem.textContent = this.formatTime(audioElement.duration);
+                };
+
+                // Cleanup
+                this.currentCleanup = () => {
+                    if (audioElement) {
+                        audioElement.pause();
+                        audioElement.src = "";
+                    }
+                    URL.revokeObjectURL(audioUrl);
+                    previewContent.innerHTML = ""; // clear DOM
                 };
             }
 
@@ -1545,21 +1591,24 @@ void main() {
             }
 
 
+
             renderImageContent(blob) {
+
                 const previewContent = document.getElementById('previewContent');
                 const imageUrl = URL.createObjectURL(blob);
 
-                const img = new Image();
+                let img = new Image();
+
                 img.onload = () => {
                     previewContent.innerHTML = `
-                    <div class="stat-card">
-            <div class="text-center">
-                <img src="${imageUrl}" class="img-fluid rounded shadow" style="max-height: 70vh;" alt="Preview">
-            </div>
+            <div class="stat-card">
+                <div class="text-center">
+                    <img src="${imageUrl}" class="img-fluid rounded shadow" style="max-height: 70vh;" alt="Preview">
+                </div>
             </div>
         `;
 
-                    // Add debug info
+                    // Debug info
                     const debugInfo = document.createElement('div');
                     debugInfo.className = 'mt-3 p-3';
                     debugInfo.style.background = 'rgba(255, 255, 255, 0.05)';
@@ -1588,11 +1637,32 @@ void main() {
                 };
 
                 img.src = imageUrl;
+
+                // Cleanup
+                this.currentCleanup = () => {
+                    if (img) {
+                        img.src = ""; // release image reference
+                        img = null;
+                    }
+                    URL.revokeObjectURL(imageUrl);
+                    previewContent.innerHTML = ""; // clear preview
+                };
             }
 
+
+
             renderDDSContent(arrayBuffer) {
+
                 const previewContent = document.getElementById('previewContent');
 
+                // Hold references for cleanup
+                let canvas = null;
+                let gl = null;
+                let texture = null;
+                let buf = null;
+                let vs = null;
+                let fs = null;
+                let prog = null;
 
                 try {
                     const DDS_MAGIC = 0x20534444; // "DDS "
@@ -1611,7 +1681,7 @@ void main() {
                     let format = null;
                     let blockSize = 0;
                     let uncompressed = false;
-                    let bytesPerPixel = 4; // default for RGBA
+                    let bytesPerPixel = 4; // default RGBA
 
                     // DX10 header
                     if (fourCC === DDS_DX10) {
@@ -1626,7 +1696,7 @@ void main() {
                             default: throw new Error('Unsupported DX10 DDS format');
                         }
                     } else {
-                        // Legacy formats
+                        // Legacy
                         switch (fourCC) {
                             case 0x31545844: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break; // DXT1
                             case 0x33545844: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break; // DXT3
@@ -1642,7 +1712,7 @@ void main() {
                     }
 
                     // Setup canvas
-                    const canvas = document.createElement('canvas');
+                    canvas = document.createElement('canvas');
                     canvas.width = width;
                     canvas.height = height;
                     canvas.style.maxWidth = '100%';
@@ -1653,17 +1723,16 @@ void main() {
                     previewContent.innerHTML = '';
                     previewContent.appendChild(canvas);
 
-                    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                    gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
                     if (!gl) throw new Error('WebGL not supported');
 
                     gl.enable(gl.BLEND);
                     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-                    const texture = gl.createTexture();
+                    texture = gl.createTexture();
                     gl.bindTexture(gl.TEXTURE_2D, texture);
 
                     if (uncompressed) {
-                        // Uncompressed RGBA
                         const pixelData = new Uint8Array(arrayBuffer, offset, width * height * bytesPerPixel);
                         gl.texImage2D(
                             gl.TEXTURE_2D,
@@ -1677,7 +1746,6 @@ void main() {
                             pixelData
                         );
                     } else {
-                        // Compressed textures
                         const ext = gl.getExtension('WEBGL_compressed_texture_s3tc') ||
                             gl.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
                             gl.getExtension('WEBKIT_WEBGL_compressed_texture_s3tc');
@@ -1700,8 +1768,8 @@ void main() {
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-                    // Simple shader
-                    const vs = gl.createShader(gl.VERTEX_SHADER);
+                    // Shaders
+                    vs = gl.createShader(gl.VERTEX_SHADER);
                     gl.shaderSource(vs, `
             attribute vec2 pos;
             attribute vec2 uv;
@@ -1713,7 +1781,7 @@ void main() {
         `);
                     gl.compileShader(vs);
 
-                    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+                    fs = gl.createShader(gl.FRAGMENT_SHADER);
                     gl.shaderSource(fs, `
             precision mediump float;
             varying vec2 vUV;
@@ -1724,7 +1792,7 @@ void main() {
         `);
                     gl.compileShader(fs);
 
-                    const prog = gl.createProgram();
+                    prog = gl.createProgram();
                     gl.attachShader(prog, vs);
                     gl.attachShader(prog, fs);
                     gl.linkProgram(prog);
@@ -1736,7 +1804,7 @@ void main() {
                         -1, 1, 0, 0,
                         1, 1, 1, 0
                     ]);
-                    const buf = gl.createBuffer();
+                    buf = gl.createBuffer();
                     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
                     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
 
@@ -1753,7 +1821,7 @@ void main() {
                     gl.clear(gl.COLOR_BUFFER_BIT);
                     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-                    // Debug info
+                    // Debug Info
                     const debugInfo = document.createElement('div');
                     debugInfo.className = 'mt-3 p-3';
                     debugInfo.style.background = 'rgba(255, 255, 255, 0.05)';
@@ -1764,7 +1832,9 @@ void main() {
                 <strong>DDS Debug Information:</strong><br>
                 <span style="color: #FFA500;">Dimensions:</span> ${width} x ${height}<br>
                 <span style="color: #FFA500;">Format:</span> ${format}<br>
-                ${uncompressed ? `<span style="color: #FFA500;">Bytes Per Pixel:</span> ${bytesPerPixel}<br>` : `<span style="color: #FFA500;">Block Size:</span> ${blockSize} bytes<br>`}
+                ${uncompressed
+                            ? `<span style="color: #FFA500;">Bytes Per Pixel:</span> ${bytesPerPixel}<br>`
+                            : `<span style="color: #FFA500;">Block Size:</span> ${blockSize} bytes<br>`}
                 <span style="color: #FFA500;">Data Offset:</span> ${offset} bytes<br>
                 <span style="color: #FFA500;">Total File Size:</span> ${arrayBuffer.byteLength} bytes<br>
                 <span style="color: #FFA500;">FourCC:</span> 0x${fourCC.toString(16).toUpperCase()}<br>
@@ -1782,6 +1852,26 @@ void main() {
             </div>
         `;
                 }
+
+                // Cleanup function
+                this.currentCleanup = () => {
+                    if (gl) {
+                        if (texture) gl.deleteTexture(texture);
+                        if (buf) gl.deleteBuffer(buf);
+                        if (vs) gl.deleteShader(vs);
+                        if (fs) gl.deleteShader(fs);
+                        if (prog) gl.deleteProgram(prog);
+
+                        gl.getExtension('WEBGL_lose_context')?.loseContext();
+                    }
+
+                    if (canvas && canvas.parentNode) {
+                        canvas.parentNode.removeChild(canvas);
+                    }
+
+                    // Nullify refs
+                    canvas = gl = texture = buf = vs = fs = prog = null;
+                };
             }
 
 

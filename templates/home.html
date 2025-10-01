@@ -1114,7 +1114,7 @@
             }
 
 
-          renderXACModel(xacData) {
+   renderXACModel(xacData) {
     const previewContent = document.getElementById('previewContent');
 
     // If a previous instance created resources, clean them up first
@@ -1125,13 +1125,13 @@
 
     previewContent.classList.add("preview-xac");
 
-
-    // Insert canvas
+    // Insert canvas in a stat-card container with scoped inline styles
     previewContent.innerHTML = `
-        <div class="stat-card">
-        <canvas id="glCanvas" class="rounded shadow" 
-          style="background:#111; display:block; margin:0 auto; width:100%; height:70vh; width:100vw; max-width:100%;">
-        </canvas>
+        <div class="stat-card" 
+             style="display:flex; justify-content:center; align-items:center; width:100%; height:70vh;">
+            <canvas id="glCanvas" class="rounded shadow" 
+                    style="background:#111; display:block; width:100%; height:100%;">
+            </canvas>
         </div>
     `;
 
@@ -1149,13 +1149,15 @@
         program: null,
     };
 
-      // Resize helper — set drawing buffer size to match displayed size (with HiDPI support)
+    // Resize helper — set drawing buffer size to match displayed size (with HiDPI support)
     function resizeCanvas() {
         if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+
         const w = Math.max(1, Math.floor(rect.width * dpr));
         const h = Math.max(1, Math.floor(rect.height * dpr));
+
         if (canvas.width !== w || canvas.height !== h) {
             canvas.width = w;
             canvas.height = h;
@@ -1496,7 +1498,7 @@ void main() {
                 Columns: ${iesData.header.num_column}
             </small>
         </div>
-        <div class="table-responsive" style="max-height:600px; overflow:auto;">
+        <div class="table-responsive" style="overflow:auto;">
             <table class="table table-sm table-dark table-striped table-bordered align-middle text-center">
                 <thead class="table-secondary text-dark sticky-top">
                     <tr>
@@ -1595,7 +1597,7 @@ void main() {
 
                 previewContent.innerHTML = `
         <div class="bg-dark p-3 rounded" 
-             style="background-color: rgba(0,0,0,0.5) !important; max-height: 500px; overflow:auto;">
+             style="background-color: rgba(0,0,0,0.5) !important; overflow:auto;">
             <pre style="color: #ffffff; margin: 0; white-space: pre-wrap; word-wrap: break-word;">
                 <code class="${prismLang !== 'none' ? 'language-' + prismLang : ''}">
 ${this.escapeHtml(text)}
@@ -1603,7 +1605,6 @@ ${this.escapeHtml(text)}
             </pre>
         </div>
     `;
-
                 // Apply Prism highlighting if language is not plain text
                 if (window.Prism && prismLang !== 'none') {
                     Prism.highlightAllUnder(previewContent);

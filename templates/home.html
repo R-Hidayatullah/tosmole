@@ -621,7 +621,7 @@
                     this.loadFilePreview(this.currentFile, this.selectedVersion);
 
                     // Update file info for the selected version
-                    const fileInfo = this.fileVersions[this.selectedVersion] || this.fileVersions[0];
+                    const fileInfo = this.fileVersions?.[this.selectedVersion] || this.fileVersions?.[0];
                     this.updateFileDetails(fileInfo);
                 });
 
@@ -791,28 +791,20 @@
                     <i class="bi ${iconClass} file-icon ${ext}"></i>
                     <span>${fileName}</span>
                 `;
+element.addEventListener('click', () => {
+    document.querySelectorAll('.tree-item.selected').forEach(item => {
+        item.classList.remove('selected');
+    });
 
-                element.addEventListener('click', () => {
-                    // Remove previous selection
-                    document.querySelectorAll('.tree-item.selected').forEach(item => {
-                        item.classList.remove('selected');
-                    });
+    element.classList.add('selected');
 
-                    // Select this item
-                    element.classList.add('selected');
+    const fullPath = parentPath ? `${parentPath}/${fileName}` : fileName;
+    this.selectedVersion = 0;
 
-                    const fullPath = parentPath ? `${parentPath}/${fileName}` : fileName;
-                    this.loadFileInfo(fullPath);
+    // Just call loadFileInfo (it already updates details + preview)
+    this.loadFileInfo(fullPath);
+});
 
-                    this.selectedVersion = 0;
-
-                    // Load the preview
-                    this.loadFilePreview(this.currentFile, this.selectedVersion);
-
-                    // Update file info for the selected version
-                    const fileInfo = this.fileVersions[this.selectedVersion] || this.fileVersions[0];
-                    this.updateFileDetails(fileInfo);
-                });
 
                 return element;
             }
@@ -854,7 +846,8 @@
                     this.fileVersions = await response.json();
                     this.updateVersionSelector();
                     this.updateBreadcrumb(filePath);
-                    this.updateFileDetails(this.fileVersions[0]);
+                    const fileInfo = this.fileVersions?.[this.selectedVersion] || this.fileVersions?.[0];
+                    this.updateFileDetails(fileInfo);
                     this.loadFilePreview(filePath, 0);
 
                 } catch (error) {

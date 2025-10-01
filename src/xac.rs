@@ -1438,14 +1438,38 @@ mod tests {
     }
 
     #[test]
-    fn test_read_xac_from_memory() -> io::Result<()> {
-        // Load file into memory first
-        let data = std::fs::read("tests/boss_wastrel_set.xac")?;
-
-        // Parse from memory instead of directly from file
+    fn test_read_xac_from_memory_stats() -> io::Result<()> {
+        let data = std::fs::read("tests/d_abbey_trap.xac")?;
         let root = XACRoot::from_bytes(&data)?;
 
         println!("Header: {:?}", root.header);
+
+        for (i, entry) in root.chunks.iter().enumerate() {
+            print!(
+                "Chunk {}: id={}, version={}, size={}",
+                i, entry.chunk.chunk_id, entry.chunk.version, entry.chunk.size_in_bytes
+            );
+
+            match &entry.chunk_data {
+                XACChunkData::XACMesh(mesh) => {
+                    println!(
+                        " | num_sub_meshes={}, num_layers={}, total_verts={}",
+                        mesh.sub_meshes.len(),
+                        mesh.vertex_attribute_layer.len(),
+                        mesh.total_verts
+                    );
+                }
+                XACChunkData::XACMesh2(mesh2) => {
+                    println!(
+                        " | num_sub_meshes={}, num_layers={}, total_verts={}",
+                        mesh2.sub_meshes.len(),
+                        mesh2.vertex_attribute_layer.len(),
+                        mesh2.total_verts
+                    );
+                }
+                _ => println!(" | (other chunk type)"),
+            }
+        }
 
         Ok(())
     }

@@ -238,7 +238,7 @@ impl Scene {
                         let u = f32::from_le_bytes(data[offset..offset + 4].try_into().unwrap());
                         let v =
                             f32::from_le_bytes(data[offset + 4..offset + 8].try_into().unwrap());
-                        s.uvcoords.push(Vector2 { x: u, y: v });
+                        s.uvcoords.push(Vector2 { x: u, y: 1.0 - v });
                     }
                 }
 

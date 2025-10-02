@@ -1157,16 +1157,12 @@
 
                     // Get a blob so we can inspect MIME type for images
                     const blob = await resp.blob();
-
-                    // If it's an image MIME, pass a blob into loadTexture (loadTexture will createObjectURL)
-                    if (blob.type.startsWith('image/')) {
-                        return await this.loadTexture(gl, blob);
-                    }
-
-                    // If not image, try treating as DDS (arrayBuffer)
                     const arrayBuffer = await blob.arrayBuffer();
-                    // attempt DDS parsing inside loadTexture: we will pass ArrayBuffer
-                    return await this.loadTexture(gl, arrayBuffer);
+
+                    if (blob.type.startsWith('image/dds')) {
+                        return await this.loadTexture(gl, arrayBuffer);
+
+                    }
                 } catch (err) {
                     console.error("Error loading texture:", err);
                     return this.createFallbackTexture(gl);
@@ -1200,37 +1196,6 @@
                     // When passing HTMLImageElement to texImage2D it's allowed in WebGL
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
                     applyTextureParams();
-                }
-
-                // If source is a Blob (image), create an objectURL and load it
-                if (source instanceof Blob) {
-                    let objectUrl = URL.createObjectURL(source);
-                    try {
-                        const img = new Image();
-                        img.crossOrigin = "anonymous";
-                        await new Promise((resolve, reject) => {
-                            img.onload = () => resolve();
-                            img.onerror = (e) => reject(new Error("Failed to load image blob"));
-                            img.src = objectUrl;
-                        });
-                        setupTextureFromImage(img);
-                    } finally {
-                        URL.revokeObjectURL(objectUrl);
-                    }
-                    return texture;
-                }
-
-                // If source is a string URL
-                if (typeof source === 'string') {
-                    const img = new Image();
-                    img.crossOrigin = "anonymous";
-                    await new Promise((resolve, reject) => {
-                        img.onload = () => resolve();
-                        img.onerror = () => reject(new Error("Failed to load image url"));
-                        img.src = source;
-                    });
-                    setupTextureFromImage(img);
-                    return texture;
                 }
 
                 // If source is ArrayBuffer -> assume DDS or uncompressed pixel buffer
@@ -1394,7 +1359,7 @@
 
 
                 // --- Extract mesh data (unchanged logic, just scoped) ---
-                const positions = [], normals = [], colors = [], indices = [], uvs = [], submeshInfos = [];;
+                const positions = [], normals = [], indices = [], uvs = [], submeshInfos = [];;
 
 
                 const extractNode = async (node) => {
@@ -1402,10 +1367,12 @@
                     if (node.model && node.model.submeshes) {
                         for (const sub of node.model.submeshes) {
                             // ✅ Only include submesh if it has a name or a texture
-                            if ((!sub.name || sub.name.trim() === "") &&
-                                (!sub.textures || sub.textures.trim() === "")) {
-                                continue; // skip unnamed and texture-less submesh
+                            if ((!sub.name || sub.name.trim() === "" || sub.name.toLowerCase().includes("none")) &&
+                                (!sub.textures || sub.textures.trim() === "" || sub.textures.toLowerCase().includes("none"))) {
+                                continue; // skip unnamed or texture-less submesh
                             }
+
+
 
                             // store texture reference (load or fallback)
                             let tex = null;
@@ -1424,11 +1391,6 @@
                                         const n = sub.normals[i];
                                         normals.push(n.x, n.y, n.z);
                                     } else normals.push(0, 0, 1);
-
-                                    if (sub.colors && sub.colors[i]) {
-                                        const c = sub.colors[i];
-                                        colors.push(c.r ?? 1, c.g ?? 1, c.b ?? 1);
-                                    } else colors.push(1.0, 0.6, 0.2);
 
                                     if (sub.uvcoords && sub.uvcoords[i]) {
                                         uvs.push(sub.uvcoords[i].u ?? 0, sub.uvcoords[i].v ?? 0);
@@ -1468,7 +1430,6 @@
                 } else {
                     positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
                     normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
-                    colors.push(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0);
                     indices.push(0, 1, 2, 2, 3, 0);
                 }
 
@@ -1536,71 +1497,39 @@ void main() {
 }
 `;
 
-                //                 const fsSource = `
-                // precision mediump float;
-                // varying vec2 vTexCoord;
-                // varying vec3 vNormal;
-                // uniform sampler2D uTexture;
-
-                // void main() {
-                //     vec3 texColor = texture2D(uTexture, vTexCoord).rgb;
-
-                //     vec3 normal = normalize(vNormal);
-
-                //     // Six directional lights (+X, -X, +Y, -Y, +Z, -Z)
-                //     vec3 lightDirs[6];
-                //     lightDirs[0] = vec3( 1.0,  0.0,  0.0);
-                //     lightDirs[1] = vec3(-1.0,  0.0,  0.0);
-                //     lightDirs[2] = vec3( 0.0,  1.0,  0.0);
-                //     lightDirs[3] = vec3( 0.0, -1.0,  0.0);
-                //     lightDirs[4] = vec3( 0.0,  0.0,  1.0);
-                //     lightDirs[5] = vec3( 0.0,  0.0, -1.0);
-
-                //     float diff = 0.0;
-                //     for (int i = 0; i < 6; i++) {
-                //         diff += max(dot(normal, lightDirs[i]), 0.0);
-                //     }
-                //     diff /= 4.0; // average contribution
-
-                //     vec3 ambient = texColor * 0.2; // ambient term
-                //     vec3 color = texColor * diff + ambient;
-
-                //     gl_FragColor = vec4(color, 1.0);
-                // }
-
-                // `;
-
                 const fsSource = `
-precision mediump float;
-varying vec3 vNormal;
+                precision mediump float;
+                varying vec2 vTexCoord;
+                varying vec3 vNormal;
+                uniform sampler2D uTexture;
 
-void main() {
-    // Base material color (replace with what you want)
-    vec3 baseColor = vec3(1.0, 0.8, 0.6); // light orange
+                void main() {
+                    vec3 texColor = texture2D(uTexture, vTexCoord).rgb;
 
-    vec3 normal = normalize(vNormal);
+                    vec3 normal = normalize(vNormal);
 
-    // Six directional lights (+X, -X, +Y, -Y, +Z, -Z)
-    vec3 lightDirs[6];
-    lightDirs[0] = vec3( 1.0,  0.0,  0.0);
-    lightDirs[1] = vec3(-1.0,  0.0,  0.0);
-    lightDirs[2] = vec3( 0.0,  1.0,  0.0);
-    lightDirs[3] = vec3( 0.0, -1.0,  0.0);
-    lightDirs[4] = vec3( 0.0,  0.0,  1.0);
-    lightDirs[5] = vec3( 0.0,  0.0, -1.0);
+                    // Six directional lights (+X, -X, +Y, -Y, +Z, -Z)
+                    vec3 lightDirs[6];
+                    lightDirs[0] = vec3( 1.0,  0.0,  0.0);
+                    lightDirs[1] = vec3(-1.0,  0.0,  0.0);
+                    lightDirs[2] = vec3( 0.0,  1.0,  0.0);
+                    lightDirs[3] = vec3( 0.0, -1.0,  0.0);
+                    lightDirs[4] = vec3( 0.0,  0.0,  1.0);
+                    lightDirs[5] = vec3( 0.0,  0.0, -1.0);
 
-    float diff = 0.0;
-    for (int i = 0; i < 6; i++) {
-        diff += max(dot(normal, lightDirs[i]), 0.0);
-    }
-    diff /= 4.0; // average contribution
+                    float diff = 0.0;
+                    for (int i = 0; i < 6; i++) {
+                        diff += max(dot(normal, lightDirs[i]), 0.0);
+                    }
+                    diff /= 4.0; // average contribution
 
-    vec3 ambient = baseColor * 0.2; // ambient term
-    vec3 color = baseColor * diff + ambient;
+                    vec3 ambient = texColor * 0.2; // ambient term
+                    vec3 color = texColor * diff + ambient;
 
-    gl_FragColor = vec4(color, 1.0);
-}
-`;
+                    gl_FragColor = vec4(color, 1.0);
+                }
+
+                `;
 
 
                 function compileShader(src, type) {
@@ -1648,6 +1577,7 @@ void main() {
                 gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, stride, 24);
 
 
+                const uTexture = gl.getUniformLocation(program, 'uTexture');
                 const uMVP = gl.getUniformLocation(program, 'uMVP');
 
                 // helper matrices (unchanged)
@@ -1723,9 +1653,6 @@ void main() {
                     gl.uniformMatrix4fv(uMVP, false, mvp);
 
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-
-                    let indexType = (positions.length / 3 > 65535) ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-                    const uTexture = gl.getUniformLocation(program, 'uTexture');
 
                     for (const sub of submeshInfos) {
                         if (!sub.texture) {
@@ -2221,6 +2148,7 @@ ${this.escapeHtml(text)}
 
                     const posLoc = gl.getAttribLocation(prog, 'pos');
                     const uvLoc = gl.getAttribLocation(prog, 'uv');
+
                     gl.enableVertexAttribArray(posLoc);
                     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 16, 0);
                     gl.enableVertexAttribArray(uvLoc);

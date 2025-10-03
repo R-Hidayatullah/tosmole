@@ -18,6 +18,7 @@ use crate::ies::IESRoot;
 
 mod api;
 mod category;
+mod fsb;
 mod gltf;
 mod ies;
 mod ipf;

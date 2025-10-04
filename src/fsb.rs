@@ -40,6 +40,7 @@ pub enum ChunkType {
     DspCoeff = 7,
     XwmaData = 10,
     VorbisData = 11,
+    UnknownData = 255,
 }
 
 // FSB5 file header
@@ -69,16 +70,18 @@ pub struct FSB5Header {
 #[br(little)]
 pub struct SampleHeaderBitfield {
     #[br(temp)]
-    raw_bitfield: u64, // read the whole 64 bits first
-
+    raw_bitfield: u64,
+    // read the whole 64 bits first
     #[br(calc=(raw_bitfield & 0x1) != 0)]
     pub extra_params: bool,
     #[br(calc=((raw_bitfield >> 1) & 0xF) as u8)]
-    pub frequency: u8, // 1-9 -> map to Hz
+    pub frequency: u8,
+    // 1-9 -> map to Hz
     #[br(calc=((raw_bitfield >> 5) & 0x1) != 0)]
     pub two_channels: bool,
     #[br(calc = ((raw_bitfield >> 6) & 0x0FFF_FFFF) as u32)]
-    pub data_offset: u32, // multiply by 16 to get actual offset
+    pub data_offset: u32,
+    // multiply by 16 to get actual offset
     #[br(calc = ((raw_bitfield >> 34) & 0x3FFF_FFFF) as u32)]
     pub samples: u32,
 }
@@ -162,6 +165,7 @@ pub struct NameTableEntry {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VorbisPacket {
     pub audio: bool,
+    pub r: u8,
     pub data: Vec<u8>,
 }
 
@@ -213,23 +217,23 @@ impl FSB5File {
                         7 => ChunkType::DspCoeff,
                         10 => ChunkType::XwmaData,
                         11 => ChunkType::VorbisData,
-                        _ => {
-                            // unknown type
-                            // you can store as ExtraChunk::Unknown later
-                            ChunkType::VorbisData // placeholder, or handle specially
-                        }
+                        _ => ChunkType::UnknownData,
                     };
 
                     let chunk = match chunk_type {
                         ChunkType::Channels => {
-                            let val: u8 = reader.read_le()?;
-                            ExtraChunk::Channels(val)
+                            assert_eq!(size, 1, "Channels chunk should be 1 byte");
+                            let mut b = [0u8; 1];
+                            reader.read_exact(&mut b)?;
+                            ExtraChunk::Channels(b[0])
                         }
                         ChunkType::Frequency => {
+                            assert_eq!(size, 4, "Frequency chunk should be 4 bytes");
                             let val: u32 = reader.read_le()?;
                             ExtraChunk::Frequency(val)
                         }
                         ChunkType::Loop => {
+                            assert_eq!(size, 8, "Loop chunk should be 8 bytes");
                             let val: Loop = reader.read_le()?;
                             ExtraChunk::Loop(val)
                         }
@@ -252,6 +256,7 @@ impl FSB5File {
                             let crc32: u32 = reader.read_le()?;
                             let mut packets = Vec::new();
                             let mut remain = size as i64 - 4;
+
                             while remain > 0 {
                                 let offset: u32 = reader.read_le()?;
                                 let granule_position = if remain > 4 {
@@ -259,13 +264,23 @@ impl FSB5File {
                                 } else {
                                     None
                                 };
+
                                 packets.push(VorbisPacketData {
                                     offset,
                                     granule_position,
                                 });
-                                remain -= if granule_position.is_some() { 8 } else { 4 };
+
+                                // Always subtract 8, like the 010 template
+                                remain -= 8;
                             }
+
                             ExtraChunk::VorbisData(VorbisChunk { crc32, packets })
+                        }
+
+                        ChunkType::UnknownData => {
+                            let mut buf = vec![0u8; size as usize];
+                            reader.read_exact(&mut buf)?;
+                            ExtraChunk::Unknown(buf)
                         }
                         _ => {
                             let mut buf = vec![0u8; size as usize];
@@ -273,6 +288,7 @@ impl FSB5File {
                             ExtraChunk::Unknown(buf)
                         }
                     };
+
                     extra_chunks.push(chunk);
                 }
             }
@@ -358,12 +374,12 @@ impl FSB5File {
                     }
                     remaining = remaining.saturating_sub(2);
 
-                    // Read 1 byte: audio (1 bit) + r (7 bits)
+                    // Read 1 byte: audio (bit 0) + r (bits 1..7)
                     let byte: u8 = reader.read_le()?;
                     remaining = remaining.saturating_sub(1);
 
-                    let audio = (byte & 0x80) != 0;
-                    let _r = byte & 0x7F;
+                    let audio = (byte & 0x01) != 0; // bit0
+                    let r = (byte >> 1) & 0x7F; // bits1..7
 
                     // Read the rest of the packet
                     let data_len = (packet_size as usize).saturating_sub(1);
@@ -371,7 +387,7 @@ impl FSB5File {
                     reader.read_exact(&mut data)?;
                     remaining = remaining.saturating_sub(data_len);
 
-                    packets.push(VorbisPacket { audio, data });
+                    packets.push(VorbisPacket { audio, r, data });
                 }
 
                 SampleData::Vorbis(packets)
@@ -394,7 +410,6 @@ impl FSB5File {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,11 +431,14 @@ mod tests {
         println!("ID: {:?}", std::str::from_utf8(&fsb.header.id).unwrap());
         println!("Version: {}", fsb.header.version);
         println!("Num samples: {}", fsb.header.num_samples);
+        println!("Num samples Actual: {}", fsb.sample_headers.len());
+
         println!("Mode: {:?}", fsb.header.mode);
         println!("Data size: {}", fsb.header.data_size);
+        println!("Data Actual: {}", fsb.sample_data.len());
 
         // --- Sample headers ---
-        for (i, sh) in fsb.sample_headers.iter().enumerate() {
+        for (i, sh) in fsb.sample_headers.iter().rev().enumerate() {
             println!("Sample {}:", i);
             println!("  Extra params: {}", sh.bitfield.extra_params);
             println!(
@@ -442,17 +460,35 @@ mod tests {
 
         // --- Name table ---
         if let Some(name_table) = &fsb.name_table {
-            for entry in name_table.iter() {
+            for entry in name_table.iter().rev() {
                 println!("Name start: {}, Name: {}", entry.name_start, entry.name);
                 break;
             }
         }
 
         // --- Sample data ---
-        println!("Sample data lengths:");
-        for (i, data) in fsb.sample_data.iter().enumerate() {
-            println!("  Sample {}: {:?}", i, data);
-            break;
+        println!("Sample data:");
+        for (i, sd) in fsb.sample_data.iter().enumerate() {
+            if i == 1529 {
+                match sd {
+                    SampleData::Vorbis(packets) => {
+                        for (j, p) in packets.iter().enumerate() {
+                            println!(
+                                "Sample {} Packet {} | audio: {} | r: {} | data length: {}",
+                                i,
+                                j,
+                                p.audio,
+                                p.r,
+                                p.data.len()
+                            );
+                        }
+                    }
+                    SampleData::Raw(buf) => {
+                        println!("Sample {} Raw data length: {}", i, buf.len());
+                    }
+                }
+                break;
+            }
         }
 
         // --- Assertions (optional) ---

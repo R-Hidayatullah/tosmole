@@ -354,40 +354,45 @@ impl FSB5File {
                     + (sample_headers[index as usize + 1].bitfield.data_offset as u64 * 16);
             }
 
+            reader.seek(std::io::SeekFrom::Start(start))?;
             let size = (end - start) as usize;
 
-            reader.seek(std::io::SeekFrom::Start(start))?;
-
             let sample = if header.mode == Mode::VORBIS {
-                // Read VORBIS packets
-                let mut remaining = size;
                 let mut packets = Vec::new();
+                let mut remaining = size;
 
                 while remaining > 0 {
                     // Read packet size (ushort = 2 bytes)
                     let packet_size: u16 = match reader.read_le() {
                         Ok(sz) => sz,
-                        Err(_) => break,
+                        Err(_) => break, // EOF or error
                     };
+
                     if packet_size == 0 {
-                        break;
+                        break; // stop like 010 Editor
                     }
-                    remaining = remaining.saturating_sub(2);
+
+                    remaining = remaining.saturating_sub(2); // subtract size field
 
                     // Read 1 byte: audio (bit 0) + r (bits 1..7)
                     let byte: u8 = reader.read_le()?;
-                    remaining = remaining.saturating_sub(1);
+                    let audio = (byte & 0x01) != 0; // bit 0
+                    let r = (byte >> 1) & 0x7F; // bits 1..7
 
-                    let audio = (byte & 0x01) != 0; // bit0
-                    let r = (byte >> 1) & 0x7F; // bits1..7
+                    remaining = remaining.saturating_sub(1); // subtract 1 byte read
 
                     // Read the rest of the packet
-                    let data_len = (packet_size as usize).saturating_sub(1);
+                    let data_len = packet_size as usize - 1;
                     let mut data = vec![0u8; data_len];
                     reader.read_exact(&mut data)?;
                     remaining = remaining.saturating_sub(data_len);
 
                     packets.push(VorbisPacket { audio, r, data });
+
+                    // stop if no remaining bytes
+                    if remaining == 0 {
+                        break;
+                    }
                 }
 
                 SampleData::Vorbis(packets)
@@ -469,26 +474,24 @@ mod tests {
         // --- Sample data ---
         println!("Sample data:");
         for (i, sd) in fsb.sample_data.iter().enumerate() {
-            if i == 1529 {
-                match sd {
-                    SampleData::Vorbis(packets) => {
-                        for (j, p) in packets.iter().enumerate() {
-                            println!(
-                                "Sample {} Packet {} | audio: {} | r: {} | data length: {}",
-                                i,
-                                j,
-                                p.audio,
-                                p.r,
-                                p.data.len()
-                            );
-                        }
-                    }
-                    SampleData::Raw(buf) => {
-                        println!("Sample {} Raw data length: {}", i, buf.len());
+            match sd {
+                SampleData::Vorbis(packets) => {
+                    for (j, p) in packets.iter().enumerate() {
+                        println!(
+                            "Sample {} Packet {} | audio: {} | r: {} | data length: {}",
+                            i,
+                            j,
+                            p.audio,
+                            p.r,
+                            p.data.len()
+                        );
                     }
                 }
-                break;
+                SampleData::Raw(buf) => {
+                    println!("Sample {} Raw data length: {}", i, buf.len());
+                }
             }
+            break;
         }
 
         // --- Assertions (optional) ---

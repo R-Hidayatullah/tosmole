@@ -473,7 +473,7 @@ mod tests {
 
         // --- Sample data ---
         println!("Sample data:");
-        for (i, sd) in fsb.sample_data.iter().enumerate() {
+        for (i, sd) in fsb.sample_data.iter().take(3).enumerate() {
             match sd {
                 SampleData::Vorbis(packets) => {
                     for (j, p) in packets.iter().enumerate() {
@@ -485,13 +485,14 @@ mod tests {
                             p.r,
                             p.data.len()
                         );
+                        break;
                     }
                 }
                 SampleData::Raw(buf) => {
                     println!("Sample {} Raw data length: {}", i, buf.len());
+                    break;
                 }
             }
-            break;
         }
 
         // --- Assertions (optional) ---

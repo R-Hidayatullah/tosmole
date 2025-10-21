@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufReader, Read};
-
+use std::io::Write;
 use serde::{Deserialize, Serialize};
 
 /// Type specifiers for attributes in .tok files.
@@ -219,6 +219,154 @@ impl<R: Read> TokParser<R> {
     }
 }
 
+
+fn print_tok_tree(node: &TokNode, depth: usize) {
+    let indent = "  ".repeat(depth);
+    println!("{}Element: {}", indent, node.element_name);
+
+    for (attr_name, attr_value) in &node.attributes {
+        println!("{}  Attribute: {} = {}", indent, attr_name, attr_value);
+    }
+
+    for child in &node.children {
+        print_tok_tree(child, depth + 1);
+    }
+}
+
+
+
+pub fn export_to_svg(root: &TokNode, path: &str, width: f32, height: f32) -> io::Result<()> {
+    use std::fs::File;
+    use std::io::Write;
+
+    let mut svg = String::new();
+    svg.push_str(r#"<?xml version="1.0" standalone="no"?>"#);
+    svg.push_str(&format!(
+        "\n<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"{}\" height=\"{}\">\n",
+        width, height
+    ));
+
+    // Find mesh3D node
+    fn find_mesh3d(node: &TokNode) -> Option<&TokNode> {
+        if node.element_name.to_lowercase() == "mesh3d" {
+            return Some(node);
+        }
+        for child in &node.children {
+            if let Some(m) = find_mesh3d(child) {
+                return Some(m);
+            }
+        }
+        None
+    }
+
+    let mesh3d = find_mesh3d(root)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No mesh3D found"))?;
+
+    // Get verts node
+    let verts_node = mesh3d.children.iter().find(|c| c.element_name.to_lowercase() == "verts");
+
+    // Collect all vertices
+    let mut all_vertices: Vec<(f32, f32)> = Vec::new();
+    if let Some(verts) = verts_node {
+        for vert in &verts.children {
+            let x = vert.attributes.iter()
+                .find(|(k, _)| k.to_lowercase() == "x")
+                .and_then(|(_, v)| v.parse::<f32>().ok())
+                .unwrap_or(0.0);
+            let y = vert.attributes.iter()
+                .find(|(k, _)| k.to_lowercase() == "y")
+                .and_then(|(_, v)| v.parse::<f32>().ok())
+                .unwrap_or(0.0);
+            all_vertices.push((x, y));
+        }
+    }
+
+    // Compute bounding box
+    let (min_x, max_x, min_y, max_y) = all_vertices.iter().fold(
+        (f32::MAX, f32::MIN, f32::MAX, f32::MIN),
+        |(min_x, max_x, min_y, max_y), &(x, y)| {
+            (
+                min_x.min(x),
+                max_x.max(x),
+                min_y.min(y),
+                max_y.max(y),
+            )
+        },
+    );
+
+    let scale_x = width / (max_x - min_x).max(1.0);
+    let scale_y = height / (max_y - min_y).max(1.0);
+    let scale = scale_x.min(scale_y) * 0.9; // add margin
+    let offset_x = width / 2.0 - (min_x + max_x) / 2.0 * scale;
+    let offset_y = height / 2.0 + (min_y + max_y) / 2.0 * scale; // invert y
+
+    // Recursive traversal for poly nodes
+    fn traverse(node: &TokNode, verts_node: Option<&TokNode>, svg: &mut String, scale: f32, offset_x: f32, offset_y: f32) {
+        let name = node.element_name.to_lowercase();
+
+        if name == "poly" {
+            let mut points = Vec::new();
+            for edge in &node.children {
+                let start_idx = edge.attributes.iter()
+                    .find(|(k, _)| k.to_lowercase() == "startvert")
+                    .and_then(|(_, v)| v.parse::<usize>().ok())
+                    .unwrap_or(0);
+
+                if let Some(verts) = verts_node {
+                    if let Some(vert) = verts.children.get(start_idx) {
+                        let x = vert.attributes.iter()
+                            .find(|(k, _)| k.to_lowercase() == "x")
+                            .and_then(|(_, v)| v.parse::<f32>().ok())
+                            .unwrap_or(0.0);
+                        let y = vert.attributes.iter()
+                            .find(|(k, _)| k.to_lowercase() == "y")
+                            .and_then(|(_, v)| v.parse::<f32>().ok())
+                            .unwrap_or(0.0);
+                        let sx = x * scale + offset_x;
+                        let sy = -y * scale + offset_y; // invert y
+                        points.push((sx, sy));
+                    }
+                }
+            }
+
+            if !points.is_empty() {
+                let points_str = points.iter()
+                    .map(|(x, y)| format!("{},{}", x, y))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                svg.push_str(&format!(
+                    r##"<polygon points="{}" fill="#F2BC65" stroke="black" stroke-width="1"/>"##,
+                    points_str
+                ));
+                svg.push('\n');
+            }
+        }
+
+        // Recurse
+        for child in &node.children {
+            traverse(child, verts_node, svg, scale, offset_x, offset_y);
+        }
+    }
+
+    traverse(root, verts_node, &mut svg, scale, offset_x, offset_y);
+
+    // Optional: draw vertex points in red
+    for &(x, y) in &all_vertices {
+        let sx = x * scale + offset_x;
+        let sy = -y * scale + offset_y;
+        svg.push_str(&format!(r#"<circle cx="{sx}" cy="{sy}" r="2" fill="red"/>"#));
+        svg.push('\n');
+    }
+
+    svg.push_str("</svg>\n");
+
+    let mut file = File::create(path)?;
+    file.write_all(svg.as_bytes())?;
+    Ok(())
+}
+
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,4 +401,29 @@ mod tests {
         println!("Parsed root element from buffer: {}", root.element_name);
         println!("Document tree: {:?}", root);
     }
+
+    #[test]
+    fn export_svg_from_tok() {
+        let path = "tests/barrack_noble.tok";
+        let file = File::open(path).unwrap();
+        let reader = BufReader::new(file);
+        let parser = TokParser::new(reader).unwrap();
+        let root = parser.parse().unwrap();
+
+        export_to_svg(&root, "barrack_noble.svg", 500.0, 500.0).unwrap();
+        println!("SVG exported to tests/barrack_noble.svg");
+    }
+
+    #[test]
+    fn print_tok_structure() {
+        let path = "tests/barrack_noble.tok";
+        let file = File::open(path).unwrap();
+        let reader = BufReader::new(file);
+        let parser = TokParser::new(reader).unwrap();
+        let root = parser.parse().unwrap();
+
+        println!("TOK file structure:");
+        print_tok_tree(&root, 0);
+    }
+
 }

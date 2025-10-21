@@ -409,6 +409,37 @@ if ext == "xac" {
     }
 }
 
+// Check for .tok extension
+if ext == "tok" {
+    let mut cursor = std::io::Cursor::new(&data);
+
+    // Parse .tok into TokNode
+    let parser = match crate::tok::TokParser::new(&mut cursor) {
+        Ok(p) => p,
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to create TOK parser"),
+    };
+
+    let root = match parser.parse() {
+        Ok(r) => r,
+        Err(_) => return HttpResponse::InternalServerError().body("Failed to parse TOK file"),
+    };
+
+    // Export SVG to memory (instead of file)
+    let mut svg_string = Vec::new();
+    {
+        use std::io::Write;
+
+        let mut cursor = std::io::Cursor::new(&mut svg_string);
+        if let Err(_) = crate::tok::export_to_svg(&root, &mut cursor, 500.0, 500.0) {
+            return HttpResponse::InternalServerError().body("Failed to export SVG");
+        }
+    }
+
+    return HttpResponse::Ok()
+        .content_type("image/svg+xml")
+        .body(svg_string);
+}
+
 
     // Text-like formats
     let text_extensions = [

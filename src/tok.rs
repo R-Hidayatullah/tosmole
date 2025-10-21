@@ -1,9 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
-use std::io::{self, BufReader, Read};
 use std::io::Write;
-use serde::{Deserialize, Serialize};
+use std::io::{self, BufReader, Read};
 
 /// Type specifiers for attributes in .tok files.
 ///
@@ -219,7 +219,6 @@ impl<R: Read> TokParser<R> {
     }
 }
 
-
 fn print_tok_tree(node: &TokNode, depth: usize) {
     let indent = "  ".repeat(depth);
     println!("{}Element: {}", indent, node.element_name);
@@ -233,9 +232,12 @@ fn print_tok_tree(node: &TokNode, depth: usize) {
     }
 }
 
-
-
-pub fn export_to_svg(root: &TokNode, path: &str, width: f32, height: f32) -> io::Result<()> {
+pub fn export_to_svg<W: Write>(
+    root: &TokNode,
+    writer: &mut W,
+    width: f32,
+    height: f32,
+) -> io::Result<()> {
     use std::fs::File;
     use std::io::Write;
 
@@ -246,34 +248,45 @@ pub fn export_to_svg(root: &TokNode, path: &str, width: f32, height: f32) -> io:
         width, height
     ));
 
-    // Find mesh3D node
-    fn find_mesh3d(node: &TokNode) -> Option<&TokNode> {
-        if node.element_name.to_lowercase() == "mesh3d" {
+    // Helper function to find a node by name
+    fn find_node<'a>(node: &'a TokNode, name: &str) -> Option<&'a TokNode> {
+        if node.element_name.to_lowercase() == name.to_lowercase() {
             return Some(node);
         }
         for child in &node.children {
-            if let Some(m) = find_mesh3d(child) {
-                return Some(m);
+            if let Some(found) = find_node(child, name) {
+                return Some(found);
             }
         }
         None
     }
 
-    let mesh3d = find_mesh3d(root)
+    // Find mesh3D and mappingTo2D nodes
+    let mesh3d = find_node(root, "mesh3D")
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No mesh3D found"))?;
 
-    // Get verts node
-    let verts_node = mesh3d.children.iter().find(|c| c.element_name.to_lowercase() == "verts");
+    let mapping2d = find_node(root, "mappingTo2D")
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "No mappingTo2D found"))?;
 
-    // Collect all vertices
+    // Get verts node from mesh3D
+    let verts_node = mesh3d
+        .children
+        .iter()
+        .find(|c| c.element_name.to_lowercase() == "verts");
+
+    // Collect all vertices for bounding box calculation
     let mut all_vertices: Vec<(f32, f32)> = Vec::new();
     if let Some(verts) = verts_node {
         for vert in &verts.children {
-            let x = vert.attributes.iter()
+            let x = vert
+                .attributes
+                .iter()
                 .find(|(k, _)| k.to_lowercase() == "x")
                 .and_then(|(_, v)| v.parse::<f32>().ok())
                 .unwrap_or(0.0);
-            let y = vert.attributes.iter()
+            let y = vert
+                .attributes
+                .iter()
                 .find(|(k, _)| k.to_lowercase() == "y")
                 .and_then(|(_, v)| v.parse::<f32>().ok())
                 .unwrap_or(0.0);
@@ -285,12 +298,7 @@ pub fn export_to_svg(root: &TokNode, path: &str, width: f32, height: f32) -> io:
     let (min_x, max_x, min_y, max_y) = all_vertices.iter().fold(
         (f32::MAX, f32::MIN, f32::MAX, f32::MIN),
         |(min_x, max_x, min_y, max_y), &(x, y)| {
-            (
-                min_x.min(x),
-                max_x.max(x),
-                min_y.min(y),
-                max_y.max(y),
-            )
+            (min_x.min(x), max_x.max(x), min_y.min(y), max_y.max(y))
         },
     );
 
@@ -300,72 +308,68 @@ pub fn export_to_svg(root: &TokNode, path: &str, width: f32, height: f32) -> io:
     let offset_x = width / 2.0 - (min_x + max_x) / 2.0 * scale;
     let offset_y = height / 2.0 + (min_y + max_y) / 2.0 * scale; // invert y
 
-    // Recursive traversal for poly nodes
-    fn traverse(node: &TokNode, verts_node: Option<&TokNode>, svg: &mut String, scale: f32, offset_x: f32, offset_y: f32) {
-        let name = node.element_name.to_lowercase();
+    // Process polygons from mappingTo2D (NOT from the entire tree)
+    for polygon in &mapping2d.children {
+        let mut points = Vec::new();
 
-        if name == "poly" {
-            let mut points = Vec::new();
-            for edge in &node.children {
-                let start_idx = edge.attributes.iter()
-                    .find(|(k, _)| k.to_lowercase() == "startvert")
-                    .and_then(|(_, v)| v.parse::<usize>().ok())
-                    .unwrap_or(0);
+        for edge in &polygon.children {
+            let start_idx = edge
+                .attributes
+                .iter()
+                .find(|(k, _)| k.to_lowercase() == "startvert")
+                .and_then(|(_, v)| v.parse::<usize>().ok())
+                .unwrap_or(0);
 
-                if let Some(verts) = verts_node {
-                    if let Some(vert) = verts.children.get(start_idx) {
-                        let x = vert.attributes.iter()
-                            .find(|(k, _)| k.to_lowercase() == "x")
-                            .and_then(|(_, v)| v.parse::<f32>().ok())
-                            .unwrap_or(0.0);
-                        let y = vert.attributes.iter()
-                            .find(|(k, _)| k.to_lowercase() == "y")
-                            .and_then(|(_, v)| v.parse::<f32>().ok())
-                            .unwrap_or(0.0);
-                        let sx = x * scale + offset_x;
-                        let sy = -y * scale + offset_y; // invert y
-                        points.push((sx, sy));
-                    }
+            if let Some(verts) = verts_node {
+                if let Some(vert) = verts.children.get(start_idx) {
+                    let x = vert
+                        .attributes
+                        .iter()
+                        .find(|(k, _)| k.to_lowercase() == "x")
+                        .and_then(|(_, v)| v.parse::<f32>().ok())
+                        .unwrap_or(0.0);
+                    let y = vert
+                        .attributes
+                        .iter()
+                        .find(|(k, _)| k.to_lowercase() == "y")
+                        .and_then(|(_, v)| v.parse::<f32>().ok())
+                        .unwrap_or(0.0);
+                    let sx = x * scale + offset_x;
+                    let sy = -y * scale + offset_y; // invert y
+                    points.push((sx, sy));
                 }
             }
-
-            if !points.is_empty() {
-                let points_str = points.iter()
-                    .map(|(x, y)| format!("{},{}", x, y))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                svg.push_str(&format!(
-                    r##"<polygon points="{}" fill="#F2BC65" stroke="black" stroke-width="1"/>"##,
-                    points_str
-                ));
-                svg.push('\n');
-            }
         }
 
-        // Recurse
-        for child in &node.children {
-            traverse(child, verts_node, svg, scale, offset_x, offset_y);
+        if !points.is_empty() {
+            let points_str = points
+                .iter()
+                .map(|(x, y)| format!("{},{}", x, y))
+                .collect::<Vec<_>>()
+                .join(" ");
+            svg.push_str(&format!(
+                r##"<polygon points="{}" fill="#F2BC65" stroke="black" stroke-width="1"/>"##,
+                points_str
+            ));
+            svg.push('\n');
         }
     }
-
-    traverse(root, verts_node, &mut svg, scale, offset_x, offset_y);
 
     // Optional: draw vertex points in red
     for &(x, y) in &all_vertices {
         let sx = x * scale + offset_x;
         let sy = -y * scale + offset_y;
-        svg.push_str(&format!(r#"<circle cx="{sx}" cy="{sy}" r="2" fill="red"/>"#));
+        svg.push_str(&format!(
+            r#"<circle cx="{sx}" cy="{sy}" r="2" fill="red"/>"#
+        ));
         svg.push('\n');
     }
 
     svg.push_str("</svg>\n");
 
-    let mut file = File::create(path)?;
-    file.write_all(svg.as_bytes())?;
+    writer.write_all(svg.as_bytes())?;
     Ok(())
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -410,8 +414,11 @@ mod tests {
         let parser = TokParser::new(reader).unwrap();
         let root = parser.parse().unwrap();
 
-        export_to_svg(&root, "barrack_noble.svg", 500.0, 500.0).unwrap();
-        println!("SVG exported to tests/barrack_noble.svg");
+        // Open the output file
+        let mut svg_file = File::create("barrack_noble.svg").unwrap();
+        export_to_svg(&root, &mut svg_file, 500.0, 500.0).unwrap();
+
+        println!("SVG exported to barrack_noble.svg");
     }
 
     #[test]
@@ -425,5 +432,4 @@ mod tests {
         println!("TOK file structure:");
         print_tok_tree(&root, 0);
     }
-
 }

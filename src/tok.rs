@@ -1,42 +1,51 @@
-use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt;
 use std::fs::File;
 use std::io::{self, BufReader, Read};
 
-/// Attribute type mapping (from PathEngine docs)
+use serde::{Deserialize, Serialize};
+
+/// Type specifiers for attributes in .tok files.
+///
+/// Integers are stored little-endian (low bytes first).
 #[repr(u8)]
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TokAttrType {
     CString = 1,
+    SInt32 = 2,
     SInt16 = 3,
     SInt8 = 4,
-    Unknown(u8),
+    UInt32 = 5,
+    UInt16 = 6,
+    UInt8 = 7,
 }
 
-impl From<u8> for TokAttrType {
-    fn from(v: u8) -> Self {
-        match v {
-            1 => Self::CString,
-            3 => Self::SInt16,
-            4 => Self::SInt8,
-            other => Self::Unknown(other),
+impl TokAttrType {
+    pub fn size(&self) -> Option<usize> {
+        match self {
+            TokAttrType::CString => None,
+            TokAttrType::SInt32 | TokAttrType::UInt32 => Some(4),
+            TokAttrType::SInt16 | TokAttrType::UInt16 => Some(2),
+            TokAttrType::SInt8 | TokAttrType::UInt8 => Some(1),
+        }
+    }
+
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(Self::CString),
+            2 => Some(Self::SInt32),
+            3 => Some(Self::SInt16),
+            4 => Some(Self::SInt8),
+            5 => Some(Self::UInt32),
+            6 => Some(Self::UInt16),
+            7 => Some(Self::UInt8),
+            _ => None,
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TokElement {
-    pub index: u8,
-    pub name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TokAttribute {
-    pub index: u8,
-    pub attr_type: TokAttrType,
-    pub name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+/// Representation of a node (element) in the .tok document tree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokNode {
     pub element_index: u8,
     pub element_name: String,
@@ -44,181 +53,204 @@ pub struct TokNode {
     pub children: Vec<TokNode>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct TokFile {
-    pub elements: Vec<TokElement>,
-    pub attributes: Vec<TokAttribute>,
-    pub root_nodes: Vec<TokNode>,
+impl fmt::Display for TokNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "TokNode {{ element_index: {}, element_name: {:?}, attributes: {:?} }}",
+            self.element_index, self.element_name, self.attributes
+        )?;
+        for child in &self.children {
+            write!(f, "{}", child)?;
+        }
+        Ok(())
+    }
 }
 
-/// Reads a null-terminated C string
-fn read_cstring(buf: &[u8], pos: &mut usize) -> io::Result<String> {
-    let start = *pos;
-    while *pos < buf.len() && buf[*pos] != 0 {
-        *pos += 1;
-    }
-    let s = String::from_utf8_lossy(&buf[start..*pos]).to_string();
-    *pos += 1; // skip null
-    Ok(s)
+/// The main parser structure.
+pub struct TokParser<R: Read> {
+    reader: R,
+    pos: usize,
+    buf: Vec<u8>,
+    element_names: HashMap<u8, String>,
+    attribute_types: HashMap<u8, (TokAttrType, String)>,
 }
 
-fn read_i16(buf: &[u8], pos: &mut usize) -> io::Result<i16> {
-    if *pos + 2 > buf.len() {
-        return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "read_i16"));
-    }
-    let val = i16::from_le_bytes([buf[*pos], buf[*pos + 1]]);
-    *pos += 2;
-    Ok(val)
-}
-
-fn read_i8(buf: &[u8], pos: &mut usize) -> io::Result<i8> {
-    if *pos >= buf.len() {
-        return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "read_i8"));
-    }
-    let val = buf[*pos] as i8;
-    *pos += 1;
-    Ok(val)
-}
-
-/// Parse .tok file
-pub fn parse_tok_file<R: Read>(mut reader: R) -> io::Result<TokFile> {
-    let mut buf = Vec::new();
-    reader.read_to_end(&mut buf)?;
-    let mut pos = 0;
-
-    // --- Enumerated Elements ---
-    let mut elements = Vec::new();
-    loop {
-        let s = read_cstring(&buf, &mut pos)?;
-        if s.is_empty() {
-            break;
-        }
-        elements.push(TokElement {
-            index: elements.len() as u8 + 1,
-            name: s,
-        });
+impl<R: Read> TokParser<R> {
+    pub fn new(mut reader: R) -> io::Result<Self> {
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        Ok(Self {
+            reader,
+            pos: 0,
+            buf,
+            element_names: HashMap::new(),
+            attribute_types: HashMap::new(),
+        })
     }
 
-    // --- Enumerated Attributes ---
-    let mut attributes = Vec::new();
-    while pos < buf.len() {
-        let t = buf[pos];
-        pos += 1;
-        if t == 0 {
-            break;
-        }
-        let name = read_cstring(&buf, &mut pos)?;
-        attributes.push(TokAttribute {
-            index: attributes.len() as u8 + 1,
-            attr_type: TokAttrType::from(t),
-            name,
-        });
+    fn read_u8(&mut self) -> u8 {
+        let v = self.buf[self.pos];
+        self.pos += 1;
+        v
     }
 
-    // --- Document Section (recursive) ---
-    fn parse_node(
-        buf: &[u8],
-        pos: &mut usize,
-        elements: &[TokElement],
-        attrs: &[TokAttribute],
-    ) -> io::Result<Option<TokNode>> {
-        if *pos >= buf.len() {
-            return Ok(None);
+    fn read_i8(&mut self) -> i8 {
+        self.read_u8() as i8
+    }
+
+    fn read_le_i16(&mut self) -> i16 {
+        let bytes = &self.buf[self.pos..self.pos + 2];
+        self.pos += 2;
+        i16::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn read_le_i32(&mut self) -> i32 {
+        let bytes = &self.buf[self.pos..self.pos + 4];
+        self.pos += 4;
+        i32::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn read_le_u16(&mut self) -> u16 {
+        let bytes = &self.buf[self.pos..self.pos + 2];
+        self.pos += 2;
+        u16::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn read_le_u32(&mut self) -> u32 {
+        let bytes = &self.buf[self.pos..self.pos + 4];
+        self.pos += 4;
+        u32::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn read_cstring(&mut self) -> String {
+        let start = self.pos;
+        while self.pos < self.buf.len() && self.buf[self.pos] != 0 {
+            self.pos += 1;
         }
+        let s = String::from_utf8_lossy(&self.buf[start..self.pos]).to_string();
+        self.pos += 1; // skip null terminator
+        s
+    }
 
-        let elem_index = buf[*pos];
-        *pos += 1;
-
-        if elem_index == 0 {
-            return Ok(None); // end marker
+    fn parse_element_names(&mut self) {
+        let mut idx = 1;
+        loop {
+            let s = self.read_cstring();
+            if s.is_empty() {
+                break;
+            }
+            self.element_names.insert(idx, s);
+            idx += 1;
         }
+    }
 
-        let element_name = elements
-            .get((elem_index - 1) as usize)
-            .map(|e| e.name.clone())
-            .unwrap_or_else(|| format!("unknown_{}", elem_index));
+    fn parse_attribute_types(&mut self) {
+        loop {
+            let t = self.read_u8();
+            if t == 0 {
+                break;
+            }
+            let name = self.read_cstring();
+            let attr_type = TokAttrType::from_u8(t).unwrap_or(TokAttrType::CString);
+            self.attribute_types
+                .insert(self.attribute_types.len() as u8 + 1, (attr_type, name));
+        }
+    }
+
+    fn read_attribute_value(&mut self, attr_type: TokAttrType) -> String {
+        match attr_type {
+            TokAttrType::CString => self.read_cstring(),
+            TokAttrType::SInt8 => self.read_i8().to_string(),
+            TokAttrType::SInt16 => self.read_le_i16().to_string(),
+            TokAttrType::SInt32 => self.read_le_i32().to_string(),
+            TokAttrType::UInt8 => self.read_u8().to_string(),
+            TokAttrType::UInt16 => self.read_le_u16().to_string(),
+            TokAttrType::UInt32 => self.read_le_u32().to_string(),
+        }
+    }
+
+    fn parse_node(&mut self) -> Option<TokNode> {
+        let element_index = self.read_u8();
+        if element_index == 0 {
+            return None;
+        }
+        let element_name = self
+            .element_names
+            .get(&element_index)
+            .cloned()
+            .unwrap_or_else(|| format!("Unknown{}", element_index));
 
         let mut attributes = Vec::new();
-
         loop {
-            let attr_index = buf[*pos];
-            *pos += 1;
+            let attr_index = self.read_u8();
             if attr_index == 0 {
                 break;
             }
 
-            let attr = attrs.get((attr_index - 1) as usize);
-            if let Some(a) = attr {
-                let val = match a.attr_type {
-                    TokAttrType::CString => read_cstring(buf, pos)?,
-                    TokAttrType::SInt16 => read_i16(buf, pos)?.to_string(),
-                    TokAttrType::SInt8 => read_i8(buf, pos)?.to_string(),
-                    TokAttrType::Unknown(_) => "??".into(),
-                };
-                attributes.push((a.name.clone(), val));
-            } else {
-                // Unknown attribute index, skip?
-                break;
-            }
+            // Take a copy of the data (TokAttrType is Copy, name is cloned)
+            let attr_data = match self.attribute_types.get(&attr_index) {
+                Some(&(t, ref name)) => (t, name.clone()), // clone the name here
+                None => continue,
+            };
+
+            // Now safe to mutably borrow self
+            let value = self.read_attribute_value(attr_data.0);
+            attributes.push((attr_data.1, value));
         }
 
-        // Parse children recursively
         let mut children = Vec::new();
-        while let Some(child) = parse_node(buf, pos, elements, attrs)? {
+        while let Some(child) = self.parse_node() {
             children.push(child);
         }
 
-        Ok(Some(TokNode {
-            element_index: elem_index,
+        Some(TokNode {
+            element_index,
             element_name,
             attributes,
             children,
-        }))
+        })
     }
 
-    let mut root_nodes = Vec::new();
-    while let Some(node) = parse_node(&buf, &mut pos, &elements, &attributes)? {
-        root_nodes.push(node);
+    pub fn parse(mut self) -> io::Result<TokNode> {
+        self.parse_element_names();
+        self.parse_attribute_types();
+        Ok(self.parse_node().unwrap())
     }
-
-    Ok(TokFile {
-        elements,
-        attributes,
-        root_nodes,
-    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+    use std::fs::File;
+    use std::io::{BufReader, Cursor, Read};
 
     #[test]
-    fn parse_barrack_noble_tok() -> io::Result<()> {
-        let path = Path::new("tests/barrack_noble.tok");
-        let file = File::open(path)?;
+    fn parse_barrack_noble_tok_file() {
+        let path = "tests/barrack_noble.tok";
+        let file = File::open(path).expect("missing test file");
         let reader = BufReader::new(file);
-        let tok = parse_tok_file(reader)?;
+        let parser = TokParser::new(reader).unwrap();
+        let root = parser.parse().unwrap();
 
-        println!("Parsed elements:");
-        for e in &tok.elements {
-            println!("  {}: {}", e.index, e.name);
-        }
+        println!("Parsed root element from file: {}", root.element_name);
+        println!("Document tree: {:?}", root);
+    }
 
-        println!("\nParsed attributes:");
-        for a in &tok.attributes {
-            println!("  {}: {:?} {}", a.index, a.attr_type, a.name);
-        }
+    #[test]
+    fn parse_barrack_noble_tok_buffer() {
+        // Read the file into memory
+        let path = "tests/barrack_noble.tok";
+        let mut file = File::open(path).expect("missing test file");
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).unwrap();
 
-        println!("\nDocument tree:");
-        for node in &tok.root_nodes {
-            println!("{:?}", node);
-        }
+        // Use a Cursor to provide BufRead/Read interface
+        let cursor = Cursor::new(buf);
+        let parser = TokParser::new(cursor).unwrap();
+        let root = parser.parse().unwrap();
 
-        assert!(!tok.elements.is_empty());
-        assert!(!tok.attributes.is_empty());
-        assert!(!tok.root_nodes.is_empty());
-
-        Ok(())
+        println!("Parsed root element from buffer: {}", root.element_name);
+        println!("Document tree: {:?}", root);
     }
 }

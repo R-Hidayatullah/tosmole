@@ -304,6 +304,12 @@
             color: #2ecc71;
         }
 
+        .file-icon.tok {
+            color: gold;
+        }
+
+
+
         /* Loading States */
         .loading {
             display: flex;
@@ -829,6 +835,7 @@
                     'jpg': 'bi-image',
                     'jpeg': 'bi-image',
                     'bmp': 'bi-image',
+                    'tok': 'bi-image',
                     'tga': 'bi-image',
                     'txt': 'bi-file-text'
                 };
@@ -1176,7 +1183,7 @@
             //  - ArrayBuffer (DDS or raw pixel data)
             loadTexture = async (gl, source) => {
                 gl.enable(gl.BLEND);
-                gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
                 let texture = gl.createTexture();
                 gl.bindTexture(gl.TEXTURE_2D, texture);
 

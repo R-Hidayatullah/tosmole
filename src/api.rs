@@ -364,82 +364,83 @@ pub async fn preview_file(
         };
     }
 
-   // XAC format
-if ext == "xac" {
-    match crate::xac::XACRoot::from_bytes(&data) {
-        Ok(xac_root) => {
-            // Lowercase the lookup key
-            let full_path_lc = _full_path.to_lowercase();
+    // XAC format
+    if ext == "xac" {
+        match crate::xac::XACRoot::from_bytes(&data) {
+            Ok(xac_root) => {
+                // Lowercase the lookup key
+                let full_path_lc = _full_path.to_lowercase();
 
-            // Try to get texture path
-            let texture_path = match mesh_map.get(&full_path_lc) {
-                Some(path) => path.clone(),
-                None => {
-                    // Fallback: replace char_hi with char_texture
-                    let fallback = {
-                        // Replace char_hi -> char_texture
-                        let mut path = _full_path.replace("char_hi", "char_texture");
+                // Try to get texture path
+                let texture_path = match mesh_map.get(&full_path_lc) {
+                    Some(path) => path.clone(),
+                    None => {
+                        // Fallback: replace char_hi with char_texture
+                        let fallback = {
+                            // Replace char_hi -> char_texture
+                            let mut path = _full_path.replace("char_hi", "char_texture");
 
-                        // Remove filename, keep folder path only
-                        path = match path.rfind('/') {
-                            Some(idx) => path[..idx].to_string(),
-                            None => path,
+                            // Remove filename, keep folder path only
+                            path = match path.rfind('/') {
+                                Some(idx) => path[..idx].to_string(),
+                                None => path,
+                            };
+
+                            // Ensure it ends with '/'
+                            if !path.ends_with('/') {
+                                path.push('/');
+                            }
+
+                            path
                         };
 
-                        // Ensure it ends with '/'
-                        if !path.ends_with('/') {
-                            path.push('/');
-                        }
+                        println!(
+                            "No texture path found for {} — using fallback folder {}",
+                            _full_path, fallback
+                        );
+                        fallback
+                    }
+                };
 
-                        path
-                    };
-
-                    println!(
-                        "No texture path found for {} — using fallback folder {}",
-                        _full_path, fallback
-                    );
-                    fallback
-                }
-            };
-
-            let scene = crate::mesh::Scene::from_xac_root(&xac_root, texture_path);
-            return HttpResponse::Ok().json(scene);
-        }
-        Err(_) => return HttpResponse::InternalServerError().body("Failed to parse XAC file"),
-    }
-}
-
-// Check for .tok extension
-if ext == "tok" {
-    let mut cursor = std::io::Cursor::new(&data);
-
-    // Parse .tok into TokNode
-    let parser = match crate::tok::TokParser::new(&mut cursor) {
-        Ok(p) => p,
-        Err(_) => return HttpResponse::InternalServerError().body("Failed to create TOK parser"),
-    };
-
-    let root = match parser.parse() {
-        Ok(r) => r,
-        Err(_) => return HttpResponse::InternalServerError().body("Failed to parse TOK file"),
-    };
-
-    // Export SVG to memory (instead of file)
-    let mut svg_string = Vec::new();
-    {
-        use std::io::Write;
-
-        let mut cursor = std::io::Cursor::new(&mut svg_string);
-        if let Err(_) = crate::tok::export_to_svg(&root, &mut cursor, 500.0, 500.0) {
-            return HttpResponse::InternalServerError().body("Failed to export SVG");
+                let scene = crate::mesh::Scene::from_xac_root(&xac_root, texture_path);
+                return HttpResponse::Ok().json(scene);
+            }
+            Err(_) => return HttpResponse::InternalServerError().body("Failed to parse XAC file"),
         }
     }
 
-    return HttpResponse::Ok()
-        .content_type("image/svg+xml")
-        .body(svg_string);
-}
+    // Check for .tok extension
+    if ext == "tok" {
+        let mut cursor = std::io::Cursor::new(&data);
 
+        // Parse .tok into TokNode
+        let parser = match crate::tok::TokParser::new(&mut cursor) {
+            Ok(p) => p,
+            Err(_) => {
+                return HttpResponse::InternalServerError().body("Failed to create TOK parser");
+            }
+        };
+
+        let root = match parser.parse() {
+            Ok(r) => r,
+            Err(_) => return HttpResponse::InternalServerError().body("Failed to parse TOK file"),
+        };
+
+        // Export SVG to memory (instead of file)
+        let mut svg_string = Vec::new();
+        {
+            use std::io::Write;
+
+            let mut cursor = std::io::Cursor::new(&mut svg_string);
+            if let Err(_) = crate::tok::export_to_svg(&root, &mut cursor, 512.0, 512.0) {
+                return HttpResponse::InternalServerError().body("Failed to export SVG");
+            }
+        }
+
+        return HttpResponse::Ok()
+            .content_type("image/svg+xml")
+            .body(svg_string);
+    }
 
     // Text-like formats
     let text_extensions = [

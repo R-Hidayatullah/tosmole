@@ -348,21 +348,11 @@ pub fn export_to_svg<W: Write>(
                 .collect::<Vec<_>>()
                 .join(" ");
             svg.push_str(&format!(
-                r##"<polygon points="{}" fill="#F2BC65" stroke="black" stroke-width="1"/>"##,
+                r##"<polygon points="{}" fill="#F2BC65" stroke="#F2BC65" stroke-width="1"/>"##,
                 points_str
             ));
             svg.push('\n');
         }
-    }
-
-    // Optional: draw vertex points in red
-    for &(x, y) in &all_vertices {
-        let sx = x * scale + offset_x;
-        let sy = -y * scale + offset_y;
-        svg.push_str(&format!(
-            r#"<circle cx="{sx}" cy="{sy}" r="2" fill="red"/>"#
-        ));
-        svg.push('\n');
     }
 
     svg.push_str("</svg>\n");

@@ -183,7 +183,7 @@ impl Folder {
             // Last part = filename
             let filename = parts[0];
             for file in &self.files {
-                if file.directory_name == filename {
+                if file.directory_name.to_lowercase() == filename.to_lowercase() {
                     let full_path = if current_path.is_empty() {
                         filename.to_string()
                     } else {

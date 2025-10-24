@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 use actix_web::{App, HttpServer, web};
+use core::option::Option::None;
 use serde::Deserialize;
 use serde_json::from_reader;
 use std::{
@@ -86,7 +87,60 @@ async fn main() -> io::Result<()> {
     let folder_tree = Arc::new(category::build_tree(grouped));
     println!("IPF parsing completed in {:.2?}", ipf_start.elapsed());
 
+    let file_find_start = Instant::now();
+    println!("Find and get files...");
+
     let xac_ies = folder_tree.search_file_by_full_path("ies_client/xac.ies");
+    let ability_ies = folder_tree.search_file_by_full_path("ies_ability/ability.ies");
+    let ability_name_ies = folder_tree.search_file_by_full_path("ies_ability/ability_ .ies");
+    let job_ies = folder_tree.search_file_by_full_path("ies/job.ies");
+    let statbase_pc_ies = folder_tree.search_file_by_full_path("ies/statbase_pc.ies");
+    let skilltree_ies = folder_tree.search_file_by_full_path("ies/skilltree.ies");
+    let skill_ies = folder_tree.search_file_by_full_path("ies/skill.ies");
+    let cooldown_ies = folder_tree.search_file_by_full_path("ies/cooldown.ies");
+    let skill_simony_ies = folder_tree.search_file_by_full_path("ies/skill_simony.ies");
+    let stance_ies = folder_tree.search_file_by_full_path("ies/stance.ies");
+    let item_gem_ies = folder_tree.search_file_by_full_path("ies/item_gem.ies");
+    let dialogtext_ies = folder_tree.search_file_by_full_path("ies_client/dialogtext.ies");
+    let item_ies = folder_tree.search_file_by_full_path("ies/item.ies");
+    let cardbattle_ies = folder_tree.search_file_by_full_path("ies/cardbattle.ies");
+    let collection_ies = folder_tree.search_file_by_full_path("ies/collection.ies");
+    let reward_indun_ies = folder_tree.search_file_by_full_path("ies/reward_indun.ies");
+    let setitem_ies = folder_tree.search_file_by_full_path("ies/setitem.ies");
+    let item_equip_ies = folder_tree.search_file_by_full_path("ies/item_equip.ies");
+    let item_colorspray_ies = folder_tree.search_file_by_full_path("ies/item_colorspray.ies");
+    let item_equip_name_ies = folder_tree.search_file_by_full_path("ies/item_equip_ .ies");
+    let item_premium_ies = folder_tree.search_file_by_full_path("ies/item_premium.ies");
+    let item_quest_ies = folder_tree.search_file_by_full_path("ies/item_quest.ies");
+    let recipe_ies = folder_tree.search_file_by_full_path("ies/recipe.ies");
+    let map_ies = folder_tree.search_file_by_full_path("ies/map.ies");
+    let zonedropitemlist_name_ies =
+        folder_tree.search_file_by_full_path("ies_drop/zonedropitemlist_ .ies");
+    let zonedropitemlist_f_name =
+        folder_tree.search_file_by_full_path("ies_drop/zonedropitemlist_f_ .ies");
+    let anchor_name_ies = folder_tree.search_file_by_full_path("ies_drop/anchor_ .ies");
+    let gentype_name_ies = folder_tree.search_file_by_full_path("ies_mongem/gentype_ .ies");
+    let map_data_name_tok = folder_tree.search_file_by_full_path("bg/ .tok");
+    let statbase_monster_ies = folder_tree.search_file_by_full_path("ies/statbase_monster.ies");
+    let statbase_monster_type_ies =
+        folder_tree.search_file_by_full_path("ies/statbase_monster_type.ies");
+    let monster_ies = folder_tree.search_file_by_full_path("ies/monster.ies");
+    let monster_event_ies = folder_tree.search_file_by_full_path("ies/monster_event.ies");
+    let monster_npc_ies = folder_tree.search_file_by_full_path("ies/monster_npc.ies");
+    let monster_solo_dungeon_ies =
+        folder_tree.search_file_by_full_path("ies/monster_solo_dungeon.ies");
+    let baseskinset_xml = folder_tree.search_file_by_full_path("ui/baseskinset/baseskinset.xml");
+    let classicon_xml = folder_tree.search_file_by_full_path("ui/baseskinset/classicon.xml");
+    let itemicon_xml = folder_tree.search_file_by_full_path("ui/baseskinset/itemicon.xml");
+    let mongem_xml = folder_tree.search_file_by_full_path("ui/baseskinset/mongem.xml");
+    let monillust_xml = folder_tree.search_file_by_full_path("ui/baseskinset/monillust.xml");
+    let skillicon_xml = folder_tree.search_file_by_full_path("ui/baseskinset/skillicon.xml");
+    let wholedicid_xml = folder_tree.search_file_by_full_path("language/wholedicid.xml");
+
+    println!(
+        "File find and get completed in {:.2?}",
+        file_find_start.elapsed()
+    );
 
     let mut mesh_map: HashMap<String, String> = HashMap::new();
 

@@ -1,6 +1,11 @@
+use quick_xml::de::from_reader;
 use serde::Deserialize;
+use serde::Serialize;
+use std::fs::File;
+use std::io::{self, Read};
+use std::path::Path;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct World {
     #[serde(rename = "ModelDir", default)]
     pub model_dirs: Vec<ModelDir>,
@@ -21,7 +26,7 @@ pub struct World {
 }
 
 // ------------------- Directories -------------------
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ModelDir {
     #[serde(rename = "@IpfName", default)]
     pub ipf_name: String,
@@ -29,7 +34,7 @@ pub struct ModelDir {
     pub path: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TexDir {
     #[serde(rename = "@IpfName", default)]
     pub ipf_name: String,
@@ -37,7 +42,7 @@ pub struct TexDir {
     pub path: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SubTexDir {
     #[serde(rename = "@IpfName", default)]
     pub ipf_name: String,
@@ -45,7 +50,7 @@ pub struct SubTexDir {
     pub path: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AnimationDir {
     #[serde(rename = "@IpfName", default)]
     pub ipf_name: String,
@@ -53,7 +58,7 @@ pub struct AnimationDir {
     pub path: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ShaTexDir {
     #[serde(rename = "@IpfName", default)]
     pub ipf_name: String,
@@ -62,7 +67,7 @@ pub struct ShaTexDir {
 }
 
 // ------------------- LightMap & Pos -------------------
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct LightMap {
     #[serde(rename = "@File", default)]
     pub file: String,
@@ -74,14 +79,14 @@ pub struct LightMap {
     pub size: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Pos {
     #[serde(rename = "@pos", default)]
     pub pos: String,
 }
 
 // ------------------- Models -------------------
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Model {
     #[serde(rename = "@File", default)]
     pub file: String,
@@ -95,6 +100,25 @@ pub struct Model {
     pub rot: Option<String>,
     #[serde(rename = "@scale", default)]
     pub scale: Option<String>,
+}
+
+impl World {
+    /// Read World from a file path, accepting &str or &Path
+    pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let file = File::open(path.as_ref())?;
+        let reader = io::BufReader::new(file);
+
+        from_reader(reader)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("XML parse error: {}", e)))
+    }
+
+    /// Read World from a byte slice in memory
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        let cursor = io::Cursor::new(bytes);
+
+        from_reader(cursor)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("XML parse error: {}", e)))
+    }
 }
 
 // ------------------- Tests -------------------

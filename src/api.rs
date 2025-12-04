@@ -13,6 +13,9 @@ use crate::category::Folder;
 use crate::ies::IESRoot;
 use crate::ipf::FileSizeStats;
 use crate::ipf::IPFFileTable;
+use crate::mesh::Scene;
+use crate::mesh::SceneNode;
+use crate::threedworld::World;
 use crate::xac::XACRoot;
 use crate::xml;
 
@@ -361,6 +364,18 @@ pub async fn preview_file(
         return match IESRoot::from_bytes(&data) {
             Ok(ies) => HttpResponse::Ok().json(ies),
             Err(_) => HttpResponse::InternalServerError().body("Failed to parse IES file"),
+        };
+    }
+
+    // 3dworld format
+    if ext == "3dworld" {
+        return match World::from_bytes(&data) {
+            Ok(dworld) => {
+                let mut _scenes_data: Vec<Scene> = Vec::new();
+
+                return HttpResponse::Ok().json(dworld);
+            }
+            Err(_) => HttpResponse::InternalServerError().body("Failed to parse 3dworld file"),
         };
     }
 

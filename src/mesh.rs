@@ -66,12 +66,15 @@ pub struct SceneNode {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Scene {
     pub root_nodes: Vec<SceneNode>,
+    pub pos: Option<[f32; 3]>,   // translation
+    pub rot: Option<[f32; 4]>,   // quaternion x,y,z,w
+    pub scale: Option<[f32; 3]>, // scale
 }
 
 // --- XAC to Scene converter ---
 impl Scene {
     pub fn from_xac_root(xac: &crate::xac::XACRoot, texture_path: String) -> Self {
-        let mut root_nodes = Vec::new();
+        let mut scene = Scene::default();
 
         for entry in &xac.chunks {
             if entry.chunk.chunk_id != XACChunk::XACChunkMesh as u32 {
@@ -121,11 +124,10 @@ impl Scene {
                     children: Vec::new(),
                 };
 
-                root_nodes.push(node);
+                scene.root_nodes.push(node);
             }
         }
-
-        Scene { root_nodes }
+        scene
     }
 
     fn parse_vertex_data(

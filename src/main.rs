@@ -25,6 +25,7 @@ mod ies;
 mod ipf;
 mod mesh;
 mod stb;
+mod threedworld;
 mod tok;
 mod tsv;
 mod web_data;

@@ -1461,7 +1461,7 @@ mod tests {
             match &entry.chunk_data {
                 XACChunkData::XACMesh(mesh) => {
                     println!(
-                        " | num_sub_meshes={}, num_layers={}, total_verts={}",
+                        " | XAC Mesh | num_sub_meshes={}, num_layers={}, total_verts={}",
                         mesh.sub_meshes.len(),
                         mesh.vertex_attribute_layer.len(),
                         mesh.total_verts
@@ -1469,7 +1469,7 @@ mod tests {
                 }
                 XACChunkData::XACMesh2(mesh2) => {
                     println!(
-                        " | num_sub_meshes={}, num_layers={}, total_verts={}",
+                        " | XAC Mesh 2 | num_sub_meshes={}, num_layers={}, total_verts={}",
                         mesh2.sub_meshes.len(),
                         mesh2.vertex_attribute_layer.len(),
                         mesh2.total_verts

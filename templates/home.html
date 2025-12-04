@@ -253,6 +253,16 @@
             color: #4a90e2;
         }
 
+        .stat-value-wrap {
+            word-break: break-all;
+            /* Break long text */
+            white-space: normal;
+            /* Wrap lines normally */
+            overflow-wrap: anywhere;
+            /* Modern alternative to break anywhere if needed */
+        }
+
+
         .stat-label {
             color: #b0b0b0;
             font-size: 0.9rem;
@@ -897,7 +907,7 @@
                 details.innerHTML = `
                     <div class="stat-card">
                         <div class="stat-label">Container</div>
-                        <div class="stat-value" style="font-size: 1rem;">${fileInfo.container_name}</div>
+                        <div class="stat-value stat-value-wrap" style="font-size: 1rem;">${fileInfo.container_name}</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">Compressed Size</div>
@@ -911,9 +921,11 @@
                         <div class="stat-label">CRC32</div>
                         <div class="stat-value" style="font-size: 1rem;">${fileInfo.crc32.toString(16).toUpperCase()}</div>
                     </div>
-                        <div class="stat-card">
+                    <div class="stat-card">
                         <div class="stat-label">File Path</div>
-                        <div class="stat-value" style="font-size: 1rem;">${fileInfo.file_path.toString()}</div>
+                        <div class="stat-value stat-value-wrap">
+                            ${fileInfo.file_path.toString()}
+                        </div>
                     </div>
                     <div class="stat-card d-flex justify-content-center align-items-center" style="height: 100px;">
                         <a href="/api/file/download?path=${encodeURIComponent(this.currentFile)}&version=${this.selectedVersion || 0}" 

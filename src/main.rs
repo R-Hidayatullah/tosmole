@@ -92,7 +92,6 @@ async fn main() -> io::Result<()> {
 
     let xac_ies = folder_tree.search_file_by_full_path("ies_client/xac.ies");
     let ability_ies = folder_tree.search_file_by_full_path("ies_ability/ability.ies");
-    let ability_name_ies = folder_tree.search_file_by_full_path("ies_ability/ability_ .ies");
     let job_ies = folder_tree.search_file_by_full_path("ies/job.ies");
     let statbase_pc_ies = folder_tree.search_file_by_full_path("ies/statbase_pc.ies");
     let skilltree_ies = folder_tree.search_file_by_full_path("ies/skilltree.ies");
@@ -109,18 +108,10 @@ async fn main() -> io::Result<()> {
     let setitem_ies = folder_tree.search_file_by_full_path("ies/setitem.ies");
     let item_equip_ies = folder_tree.search_file_by_full_path("ies/item_equip.ies");
     let item_colorspray_ies = folder_tree.search_file_by_full_path("ies/item_colorspray.ies");
-    let item_equip_name_ies = folder_tree.search_file_by_full_path("ies/item_equip_ .ies");
     let item_premium_ies = folder_tree.search_file_by_full_path("ies/item_premium.ies");
     let item_quest_ies = folder_tree.search_file_by_full_path("ies/item_quest.ies");
     let recipe_ies = folder_tree.search_file_by_full_path("ies/recipe.ies");
     let map_ies = folder_tree.search_file_by_full_path("ies/map.ies");
-    let zonedropitemlist_name_ies =
-        folder_tree.search_file_by_full_path("ies_drop/zonedropitemlist_ .ies");
-    let zonedropitemlist_f_name =
-        folder_tree.search_file_by_full_path("ies_drop/zonedropitemlist_f_ .ies");
-    let anchor_name_ies = folder_tree.search_file_by_full_path("ies_drop/anchor_ .ies");
-    let gentype_name_ies = folder_tree.search_file_by_full_path("ies_mongem/gentype_ .ies");
-    let map_data_name_tok = folder_tree.search_file_by_full_path("bg/ .tok");
     let statbase_monster_ies = folder_tree.search_file_by_full_path("ies/statbase_monster.ies");
     let statbase_monster_type_ies =
         folder_tree.search_file_by_full_path("ies/statbase_monster_type.ies");
@@ -136,6 +127,16 @@ async fn main() -> io::Result<()> {
     let monillust_xml = folder_tree.search_file_by_full_path("ui/baseskinset/monillust.xml");
     let skillicon_xml = folder_tree.search_file_by_full_path("ui/baseskinset/skillicon.xml");
     let wholedicid_xml = folder_tree.search_file_by_full_path("language/wholedicid.xml");
+
+    let ability_name_ies = folder_tree.search_file_by_full_path("ies_ability/ability_ .ies");
+    let item_equip_name_ies = folder_tree.search_file_by_full_path("ies/item_equip_ .ies");
+    let anchor_name_ies = folder_tree.search_file_by_full_path("ies_drop/anchor_ .ies");
+    let gentype_name_ies = folder_tree.search_file_by_full_path("ies_mongem/gentype_ .ies");
+    let map_data_name_tok = folder_tree.search_file_by_full_path("bg/ .tok");
+    let zonedropitemlist_name_ies =
+        folder_tree.search_file_by_full_path("ies_drop/zonedropitemlist_ .ies");
+    let zonedropitemlist_f_name =
+        folder_tree.search_file_by_full_path("ies_drop/zonedropitemlist_f_ .ies");
 
     println!(
         "File find and get completed in {:.2?}",

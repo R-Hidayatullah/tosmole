@@ -13,8 +13,7 @@ use crate::category::Folder;
 use crate::ies::IESRoot;
 use crate::ipf::FileSizeStats;
 use crate::ipf::IPFFileTable;
-use crate::mesh::Scene;
-use crate::mesh::SceneNode;
+use crate::mesh::*;
 use crate::threedworld::World;
 use crate::xac::XACRoot;
 use crate::xml;
@@ -371,9 +370,70 @@ pub async fn preview_file(
     if ext == "3dworld" {
         return match World::from_bytes(&data) {
             Ok(dworld) => {
-                let mut _scenes_data: Vec<Scene> = Vec::new();
+                let mut scenes_data = Vec::new();
 
-                return HttpResponse::Ok().json(dworld);
+                let ipf_name = dworld.model_dirs[0].ipf_name.clone();
+
+                let base_path = dworld.model_dirs[0].path.clone();
+
+                for model in &dworld.models {
+                    fn normalize_path(p: &str) -> String {
+                        p.replace('\\', "/").trim_matches('/').to_string()
+                    }
+
+                    let ipf_name = normalize_path(&dworld.model_dirs[0].ipf_name);
+                    let base_path = normalize_path(&dworld.model_dirs[0].path);
+                    let file_name = normalize_path(&model.file);
+
+                    let model_path = format!("{}/{}/{}", ipf_name, base_path, file_name);
+                    let results_data = folder_tree.search_file_by_full_path(&model_path);
+
+                    let (_full_path, file_table) = match results_data.last() {
+                        Some(entry) => entry,
+                        None => return HttpResponse::NotFound().body("File/version not found"),
+                    };
+
+                    // Extract file
+                    let data = match file_table.extract_data() {
+                        Ok(d) => d,
+                        Err(_) => {
+                            return HttpResponse::InternalServerError()
+                                .body("Failed to extract file data");
+                        }
+                    };
+
+                    // Parse XAC
+                    let xac_root = match crate::xac::XACRoot::from_bytes(&data) {
+                        Ok(root) => root,
+                        Err(_) => {
+                            return HttpResponse::InternalServerError()
+                                .body("Failed to parse XAC file");
+                        }
+                    };
+
+                    // Build texture root based on TexDir
+                    let texture_path = dworld
+                        .tex_dirs
+                        .get(0)
+                        .map(|t| t.path.clone())
+                        .unwrap_or_else(|| "".to_string());
+
+                    // Build scene
+                    let mut scene = crate::mesh::Scene::from_xac_root(&xac_root, texture_path);
+                    // Convert optional pos/rot/scale to Vector3/Vector4
+                    if let Some(pos_str) = &model.pos {
+                        scene.position = Some(dx_to_gl_position(to_vec3(pos_str)));
+                    }
+                    if let Some(rot_str) = &model.rot {
+                        scene.rotation = Some(dx_to_gl_quat(to_quat(rot_str)));
+                    }
+                    if let Some(scale_str) = &model.scale {
+                        scene.scale = Some(dx_to_gl_scale(to_vec3(scale_str)));
+                    }
+                    scenes_data.push(scene);
+                }
+
+                HttpResponse::Ok().json(scenes_data)
             }
             Err(_) => HttpResponse::InternalServerError().body("Failed to parse 3dworld file"),
         };

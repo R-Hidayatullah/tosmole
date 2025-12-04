@@ -57,18 +57,20 @@ pub struct Model {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct SceneNode {
     pub name: String,
-    pub transform: Option<[[f32; 4]; 4]>, // 4x4 transform matrix
-    pub model: Option<Model>,             // optional model at this node
-    pub children: Vec<SceneNode>,         // nested nodes
+    pub position: Option<Vector3>, // translation
+    pub rotation: Option<Vector4>, // quaternion x,y,z,w
+    pub scale: Option<Vector3>,    // scale
+    pub model: Option<Model>,      // optional model at this node
+    pub children: Vec<SceneNode>,  // nested nodes
 }
 
 // Root scene can either be a single node or multiple nodes
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Scene {
     pub root_nodes: Vec<SceneNode>,
-    pub pos: Option<[f32; 3]>,   // translation
-    pub rot: Option<[f32; 4]>,   // quaternion x,y,z,w
-    pub scale: Option<[f32; 3]>, // scale
+    pub position: Option<Vector3>, // translation
+    pub rotation: Option<Vector4>, // quaternion x,y,z,w
+    pub scale: Option<Vector3>,    // scale
 }
 
 // --- XAC to Scene converter ---
@@ -119,9 +121,11 @@ impl Scene {
             if let Some(model) = model {
                 let node = SceneNode {
                     name: model.name.clone(),
-                    transform: None, // you can fill this if you have node transform
                     model: Some(model),
                     children: Vec::new(),
+                    position: None,
+                    rotation: None,
+                    scale: None,
                 };
 
                 scene.root_nodes.push(node);
@@ -294,6 +298,51 @@ impl Scene {
         parsed_submeshes
     }
 }
+
+pub fn to_vec3(s: &str) -> Vector3 {
+    let mut it = s.split_whitespace().filter_map(|n| n.parse::<f32>().ok());
+    Vector3 {
+        x: it.next().unwrap_or(0.0),
+        y: it.next().unwrap_or(0.0),
+        z: it.next().unwrap_or(0.0),
+    }
+}
+
+pub fn to_quat(s: &str) -> Vector4 {
+    let mut it = s.split_whitespace().filter_map(|n| n.parse::<f32>().ok());
+    Vector4 {
+        x: it.next().unwrap_or(0.0),
+        y: it.next().unwrap_or(0.0),
+        z: it.next().unwrap_or(0.0),
+        w: it.next().unwrap_or(1.0),
+    }
+}
+
+pub fn dx_to_gl_position(v: Vector3) -> Vector3 {
+    Vector3 {
+        x: v.x,
+        y: v.y,
+        z: -v.z,
+    }
+}
+
+pub fn dx_to_gl_scale(v: Vector3) -> Vector3 {
+    Vector3 {
+        x: v.x,
+        y: v.y,
+        z: v.z,
+    } // scale does NOT flip
+}
+
+pub fn dx_to_gl_quat(q: Vector4) -> Vector4 {
+    Vector4 {
+        x: -q.x,
+        y: q.y,
+        z: q.z,
+        w: -q.w,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

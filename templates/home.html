@@ -927,7 +927,7 @@
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">File Path</div>
-                        <div class="stat-value stat-value-wrap">
+                        <div class="stat-value stat-value-wrap" style="font-size: 1rem;">
                             ${fileInfo.file_path.toString()}
                         </div>
                     </div>
@@ -967,7 +967,11 @@
                     } else if (contentType.includes('audio') && extension === 'mp3') {
                         const mp3Data = await response.blob();
                         this.renderMP3Audio(mp3Data);
-                    } else if (contentType.includes('application/json') && extension === 'xac') {
+                    } else if (contentType.includes('application/json') && extension === '3dworld') {
+                        const xacDataWorld = await response.json();
+                        this.renderXACModelWorld(xacDataWorld);
+                    }
+                    else if (contentType.includes('application/json') && extension === 'xac') {
                         const xacData = await response.json();
                         this.renderXACModel(xacData);
                     } else if (contentType.includes('text/plain')) {
@@ -1306,6 +1310,459 @@
             }
 
 
+            async renderXACModelWorld(xacData) {
+                const previewContent = document.getElementById('previewContent');
+
+                // If a previous instance created resources, clean them up first
+                if (previewContent._xacCleanup) {
+                    try { previewContent._xacCleanup(); } catch (e) { console.warn('cleanup failed', e); }
+                    previewContent._xacCleanup = null;
+                }
+
+                previewContent.classList.add("preview-xac");
+
+                // Insert canvas in a stat-card container with scoped inline styles
+                previewContent.innerHTML = `
+        <div class="stat-card" 
+             style="display:flex; justify-content:center; align-items:center; width:100%; height:70vh;">
+            <canvas id="glCanvas" class="rounded shadow" 
+                    style="background:#111; display:block; width:100%; height:100%;">
+            </canvas>
+        </div>
+    `;
+
+                let canvas = document.getElementById('glCanvas');
+
+                // Keep references for cleanup
+                const cleanupItems = {
+                    rafId: null,
+                    listeners: [],
+                    gl: null,
+                    vbo: null,
+                    ibo: null,
+                    vs: null,
+                    fs: null,
+                    program: null,
+                    textures: [],
+                };
+
+
+                // Resize helper — set drawing buffer size to match displayed size (with HiDPI support)
+                function resizeCanvas() {
+                    if (!canvas) return;
+                    const dpr = window.devicePixelRatio || 1;
+                    const rect = canvas.getBoundingClientRect();
+
+                    const w = Math.max(1, Math.floor(rect.width * dpr));
+                    const h = Math.max(1, Math.floor(rect.height * dpr));
+
+                    if (canvas.width !== w || canvas.height !== h) {
+                        canvas.width = w;
+                        canvas.height = h;
+                        if (cleanupItems.gl) cleanupItems.gl.viewport(0, 0, w, h);
+                    }
+                }
+
+                // Attach a listener and remember it for cleanup
+                function addListener(target, type, fn, opts) {
+                    target.addEventListener(type, fn, opts);
+                    cleanupItems.listeners.push({ target, type, fn, opts });
+                }
+
+                // --- GL context ---
+                const gl = canvas.getContext('webgl', { preserveDrawingBuffer: false });
+                if (!gl) {
+                    console.error('WebGL not supported');
+                    return;
+                }
+
+                cleanupItems.gl = gl;
+
+                // Initial resize (defer to next frame so layout has settled)
+                requestAnimationFrame(resizeCanvas);
+
+                // Watch window resizes
+                addListener(window, 'resize', resizeCanvas);
+
+
+                // --- Extract mesh data (unchanged logic, just scoped) ---
+                const positions = [], normals = [], indices = [], uvs = [], submeshInfos = [];;
+
+
+                const extractNode = async (node, parentTransform = { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }) => {
+                    if (!node) return;
+
+                    // Local transform from Rust JSON
+                    const localPos = node.position ? [node.position.x, node.position.y, node.position.z] : [0, 0, 0];
+                    const localScale = node.scale ? [node.scale.x, node.scale.y, node.scale.z] : [1, 1, 1];
+                    const localRot = node.rotation ? [node.rotation.x, node.rotation.y, node.rotation.z, node.rotation.w] : [0, 0, 0, 1];
+
+                    // Combine with parent transform
+                    const worldPos = [
+                        parentTransform.position[0] + localPos[0],
+                        parentTransform.position[1] + localPos[1],
+                        parentTransform.position[2] + localPos[2],
+                    ];
+                    const worldScale = [
+                        parentTransform.scale[0] * localScale[0],
+                        parentTransform.scale[1] * localScale[1],
+                        parentTransform.scale[2] * localScale[2],
+                    ];
+
+                    if (node.model && node.model.submeshes) {
+                        for (const sub of node.model.submeshes) {
+                            // ✅ Only include submesh if it has a name or a texture
+                            if ((!sub.name || sub.name.trim() === "" || sub.name.toLowerCase().includes("none")) &&
+                                (!sub.textures || sub.textures.trim() === "" || sub.textures.toLowerCase().includes("none"))) {
+                                continue; // skip unnamed or texture-less submesh
+                            }
+
+
+
+                            // store texture reference (load or fallback)
+                            let tex = null;
+                            if (sub.textures) {
+                                tex = await this.loadTextureFromServer(gl, sub.textures, 0);
+                            }
+
+
+                            const baseIndex = positions.length / 3;
+                            if (sub.positions && sub.positions.length > 0) {
+                                for (let i = 0; i < sub.positions.length; i++) {
+                                    const pos = sub.positions[i];
+                                    positions.push(pos.x, pos.y, pos.z);
+
+                                    if (sub.normals && sub.normals[i]) {
+                                        const n = sub.normals[i];
+                                        normals.push(n.x, n.y, n.z);
+                                    } else normals.push(0, 0, 1);
+
+                                    if (sub.uvcoords && sub.uvcoords[i]) {
+                                        uvs.push(sub.uvcoords[i].u ?? 0, sub.uvcoords[i].v ?? 0);
+                                    } else {
+                                        uvs.push(0, 0);
+                                    }
+
+                                }
+                            }
+                            if (sub.indices && sub.indices.length > 0) {
+                                for (const idx of sub.indices) indices.push(baseIndex + idx);
+                            } else {
+                                const vertCount = sub.positions ? sub.positions.length : 4;
+                                for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
+                            }
+
+                            submeshInfos.push({
+                                texture: tex,
+                                indexOffset: indices.length - (sub.indices ? sub.indices.length : sub.positions.length),
+                                indexCount: sub.indices ? sub.indices.length : sub.positions.length
+                            });
+
+                            if (!tex) {
+                                tex = this.createFallbackTexture(gl);
+                            } else if (tex !== gl._fallbackWhiteTexture) {
+                                cleanupItems.textures.push(tex);
+                            }
+
+                        }
+                    }
+                    if (node.children) for (const child of node.children) await extractNode(child, { position: worldPos, rotation: localRot, scale: worldScale });
+
+                }
+
+                if (xacData.root_nodes && xacData.root_nodes.length > 0) {
+                    for (const root of xacData.root_nodes) await extractNode(root);
+                } else {
+                    positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
+                    normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
+                    indices.push(0, 1, 2, 2, 3, 0);
+                }
+
+                // --- Bounding box & view setup (unchanged) ---
+                let minX = Infinity, minY = Infinity, minZ = Infinity;
+                let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+                for (let i = 0; i < positions.length; i += 3) {
+                    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+                    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+                    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+                }
+                const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2, centerZ = (minZ + maxZ) / 2;
+                const sizeX = maxX - minX, sizeY = maxY - minY, sizeZ = maxZ - minZ;
+                const maxSize = Math.max(sizeX, sizeY, sizeZ) || 1;
+                let distance = maxSize * 1.5;
+
+                // --- Interleave vertex data ---
+                const vertexCount = positions.length / 3;
+                // Assuming vertexData layout: position (3), normal (3), texcoord (2)
+                const vertexData = new Float32Array(vertexCount * 8);
+                for (let i = 0; i < vertexCount; i++) {
+                    vertexData[i * 8 + 0] = positions[i * 3 + 0];
+                    vertexData[i * 8 + 1] = positions[i * 3 + 1];
+                    vertexData[i * 8 + 2] = positions[i * 3 + 2];
+                    vertexData[i * 8 + 3] = normals[i * 3 + 0];
+                    vertexData[i * 8 + 4] = normals[i * 3 + 1];
+                    vertexData[i * 8 + 5] = normals[i * 3 + 2];
+                    vertexData[i * 8 + 6] = uvs[i * 2 + 0] || 0;
+                    vertexData[i * 8 + 7] = uvs[i * 2 + 1] || 0;
+                }
+
+
+                const needUint32 = (positions.length / 3 > 65535);
+                const idxExt = gl.getExtension('OES_element_index_uint');
+                let indexArray;
+                let indexType;
+                if (needUint32 && idxExt) {
+                    indexArray = new Uint32Array(indices);
+                    indexType = gl.UNSIGNED_INT;
+                } else {
+                    if (needUint32 && !idxExt) {
+                        console.warn('Mesh needs >65535 indices but OES_element_index_uint missing. Truncating indices.');
+                        // truncate indices to 65535
+                        indices = indices.slice(0, 65535);
+                    }
+                    indexArray = new Uint16Array(indices);
+                    indexType = gl.UNSIGNED_SHORT;
+                }
+
+
+                // --- Shaders (same sources) ---
+                const vsSource = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+attribute vec2 aTexCoord;
+varying vec2 vTexCoord;
+varying vec3 vNormal;
+
+uniform mat4 uMVP;
+
+void main() {
+    gl_Position = uMVP * vec4(aPosition,1.0);
+    vTexCoord = aTexCoord;
+    vNormal = aNormal;
+}
+`;
+
+                const fsSource = `
+                precision mediump float;
+                varying vec2 vTexCoord;
+                varying vec3 vNormal;
+                uniform sampler2D uTexture;
+
+                void main() {
+                    vec3 texColor = texture2D(uTexture, vTexCoord).rgb;
+
+                    vec3 normal = normalize(vNormal);
+
+                    // Six directional lights (+X, -X, +Y, -Y, +Z, -Z)
+                    vec3 lightDirs[6];
+                    lightDirs[0] = vec3( 1.0,  0.0,  0.0);
+                    lightDirs[1] = vec3(-1.0,  0.0,  0.0);
+                    lightDirs[2] = vec3( 0.0,  1.0,  0.0);
+                    lightDirs[3] = vec3( 0.0, -1.0,  0.0);
+                    lightDirs[4] = vec3( 0.0,  0.0,  1.0);
+                    lightDirs[5] = vec3( 0.0,  0.0, -1.0);
+
+                    float diff = 0.0;
+                    for (int i = 0; i < 6; i++) {
+                        diff += max(dot(normal, lightDirs[i]), 0.0);
+                    }
+                    diff /= 4.0; // average contribution
+
+                    vec3 ambient = texColor * 0.2; // ambient term
+                    vec3 color = texColor * diff + ambient;
+
+                    gl_FragColor = vec4(color, 1.0);
+                }
+
+                `;
+
+
+                function compileShader(src, type) {
+                    const s = gl.createShader(type);
+                    gl.shaderSource(s, src);
+                    gl.compileShader(s);
+                    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                        const log = gl.getShaderInfoLog(s);
+                        console.error('Shader compile error:', log);
+                    }
+                    return s;
+                }
+
+                // Create program and buffers
+                const vs = compileShader(vsSource, gl.VERTEX_SHADER);
+                const fs = compileShader(fsSource, gl.FRAGMENT_SHADER);
+                const program = gl.createProgram();
+                if (vs) gl.attachShader(program, vs);
+                if (fs) gl.attachShader(program, fs);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error('Program link error:', gl.getProgramInfoLog(program));
+                }
+                gl.useProgram(program);
+
+                const vbo = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+
+                const ibo = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
+
+                // Attribute setup
+                const aPos = gl.getAttribLocation(program, 'aPosition');
+                const aNormal = gl.getAttribLocation(program, 'aNormal');
+                const aTex = gl.getAttribLocation(program, 'aTexCoord');
+                gl.enableVertexAttribArray(aPos);
+                gl.enableVertexAttribArray(aNormal);
+                gl.enableVertexAttribArray(aTex);
+
+                const stride = 8 * 4; // 8 floats: pos+normal+uv
+                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
+                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
+                gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, stride, 24);
+
+
+                const uTexture = gl.getUniformLocation(program, 'uTexture');
+                const uMVP = gl.getUniformLocation(program, 'uMVP');
+
+                // helper matrices (unchanged)
+                function identity() { return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
+                function perspective(fov, aspect, near, far) {
+                    const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
+                    return new Float32Array([
+                        f / aspect, 0, 0, 0,
+                        0, f, 0, 0,
+                        0, 0, (far + near) * nf, -1,
+                        0, 0, (2 * far * near) * nf, 0
+                    ]);
+                }
+                function multiply(a, b) {
+                    const o = new Float32Array(16);
+                    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
+                        o[j * 4 + i] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
+                    return o;
+                }
+                function translate(m, x, y, z) { const t = identity(); t[12] = -x; t[13] = -y; t[14] = -z - distance; return multiply(m, t); }
+                function rotateX(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[5] = c; r[6] = s; r[9] = -s; r[10] = c; return multiply(m, r); }
+                function rotateY(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[0] = c; r[2] = s; r[8] = -s; r[10] = c; return multiply(m, r); }
+
+                let rotX = 0, rotY = 0;
+                let mouseDown = false, lastX = 0, lastY = 0;
+
+                // Single set of pointer handlers (no duplicates)
+                addListener(canvas, 'mousedown', e => { mouseDown = true; lastX = e.clientX; lastY = e.clientY; });
+                addListener(window, 'mouseup', () => { mouseDown = false; });
+                addListener(canvas, 'mousemove', e => {
+                    if (mouseDown) {
+                        rotY -= (e.clientX - lastX) * 0.01;
+                        // Update rotX with clamping (same clamp as earlier)
+                        rotX += (e.clientY - lastY) * 0.01;
+                        const maxRot = Math.PI / 2 - 0.01;
+                        if (rotX > maxRot) rotX = maxRot;
+                        if (rotX < -maxRot) rotX = -maxRot;
+
+                        lastX = e.clientX;
+                        lastY = e.clientY;
+                    }
+                });
+
+                addListener(canvas, 'wheel', e => {
+                    e.preventDefault();
+                    const zoomSpeed = 1.02;
+                    if (e.deltaY < 0) {
+                        distance /= zoomSpeed;
+                    } else {
+                        distance *= zoomSpeed;
+                    }
+                    distance = Math.max(maxSize * 0.5, Math.min(maxSize * 10, distance));
+                }, { passive: false });
+
+                // store GL resources for cleanup
+                cleanupItems.vbo = vbo;
+                cleanupItems.ibo = ibo;
+                cleanupItems.vs = vs;
+                cleanupItems.fs = fs;
+                cleanupItems.program = program;
+
+                function renderLoop() {
+                    resizeCanvas();
+                    gl.clearColor(0.1, 0.1, 0.1, 1);
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                    gl.enable(gl.DEPTH_TEST);
+
+                    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.01, 30000);
+                    let view = translate(identity(), centerX, centerY, centerZ);
+                    view = rotateX(view, rotX);
+                    view = rotateY(view, rotY);
+                    const mvp = multiply(proj, view);
+                    gl.uniformMatrix4fv(uMVP, false, mvp);
+
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+
+                    for (const sub of submeshInfos) {
+                        if (!sub.texture) {
+                        } else {
+                            gl.activeTexture(gl.TEXTURE0);
+                            gl.bindTexture(gl.TEXTURE_2D, sub.texture);
+                            gl.uniform1i(uTexture, 0);
+                        }
+
+                        gl.drawElements(gl.TRIANGLES, sub.indexCount, indexType, sub.indexOffset * indexType.BYTES_PER_ELEMENT);
+                    }
+
+                    cleanupItems.rafId = requestAnimationFrame(renderLoop);
+                }
+
+                renderLoop();
+
+                // Provide a cleanup function so future calls can dispose of resources
+                previewContent._xacCleanup = () => {
+                    // Cancel RAF
+                    if (cleanupItems.rafId != null) {
+                        try { cancelAnimationFrame(cleanupItems.rafId); } catch (e) { }
+                        cleanupItems.rafId = null;
+                    }
+                    // Remove listeners
+                    for (const L of cleanupItems.listeners) {
+                        try { L.target.removeEventListener(L.type, L.fn, L.opts); } catch (e) { }
+                    }
+                    cleanupItems.listeners.length = 0;
+
+                    // Delete GL resources (if context still available)
+                    try {
+                        const g = cleanupItems.gl;
+                        if (g) {
+                            gl.bindTexture(gl.TEXTURE_2D, null);
+                            for (const t of cleanupItems.textures) {
+                                try { g.deleteTexture(t); } catch (e) { }
+                            }
+                            cleanupItems.textures = [];
+                            if (cleanupItems.vbo) { g.deleteBuffer(cleanupItems.vbo); cleanupItems.vbo = null; }
+                            if (cleanupItems.ibo) { g.deleteBuffer(cleanupItems.ibo); cleanupItems.ibo = null; }
+                            if (cleanupItems.program) {
+                                try {
+                                    if (cleanupItems.vs) { g.detachShader(cleanupItems.program, cleanupItems.vs); g.deleteShader(cleanupItems.vs); cleanupItems.vs = null; }
+                                    if (cleanupItems.fs) { g.detachShader(cleanupItems.program, cleanupItems.fs); g.deleteShader(cleanupItems.fs); cleanupItems.fs = null; }
+                                } catch (e) { /* some browsers throw when detaching */ }
+                                try { g.deleteProgram(cleanupItems.program); } catch (e) { }
+                                cleanupItems.program = null;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('GL cleanup error', e);
+                    }
+
+                    // Clear canvas and remove DOM nodes if desired (kept minimal)
+                    // previewContent.innerHTML = ''; // if you want to fully remove canvas output
+                };
+
+                // (Optional) Also cleanup when the canvas context is lost
+                function onContextLost(ev) {
+                    ev.preventDefault();
+                    if (previewContent._xacCleanup) previewContent._xacCleanup();
+                }
+                addListener(canvas, 'webglcontextlost', onContextLost);
+            }
 
 
             async renderXACModel(xacData) {

@@ -1173,596 +1173,298 @@
                 return tex;
             }
 
-
-            // Load texture from server — detect image vs DDS
+            // Load texture from server — detect image vs DDS with detailed logging
             loadTextureFromServer = async (gl, path, version = 0) => {
+
+                console.log("===========================================");
+                console.log("[TextureLoader] START loadTextureFromServer");
+                console.log(`[Input] path = ${path}`);
+                console.log(`[Input] version = ${version}`);
+
                 const url = `/api/file/download?path=${encodeURIComponent(path)}&version=${version}`;
+                console.log(`[URL] Fetching: ${url}`);
 
                 try {
+                    console.log("[Fetch] Sending request...");
                     const resp = await fetch(url);
-                    if (!resp.ok) throw new Error(`Failed to download file: ${resp.status}`);
 
-                    // Get a blob so we can inspect MIME type for images
-                    const blob = await resp.blob();
-                    const arrayBuffer = await blob.arrayBuffer();
+                    console.log(`[Fetch] Status: ${resp.status} ${resp.statusText}`);
 
-                    if (blob.type.startsWith('image/dds')) {
-                        return await this.loadTexture(gl, arrayBuffer);
-
+                    if (!resp.ok) {
+                        console.error("[Fetch] Response NOT OK");
+                        throw new Error(`Failed to download file: ${resp.status}`);
                     }
+
+                    console.log("[Fetch] OK, reading blob...");
+                    const blob = await resp.blob();
+
+                    console.log(`[Blob] MIME Type: ${blob.type}`);
+                    console.log(`[Blob] Size: ${blob.size} bytes`);
+
+                    const arrayBuffer = await blob.arrayBuffer();
+                    console.log(`[ArrayBuffer] Loaded. ByteLength: ${arrayBuffer.byteLength}`);
+
+                    if (arrayBuffer.byteLength === 0) {
+                        console.error("[ArrayBuffer] ERROR: File is empty (0 bytes).");
+                        throw new Error("Empty file received from server");
+                    }
+
+                    // Optional DDS detection
+                    const isDDS =
+                        blob.type.includes("dds") ||
+                        (arrayBuffer.byteLength >= 4 &&
+                            new Uint8Array(arrayBuffer, 0, 4).every((v, i, arr) =>
+                                i < 4 ? ["D".charCodeAt(0), "D".charCodeAt(0), "S".charCodeAt(0), " ".charCodeAt(0)][i] === v : true
+                            ));
+
+                    console.log(`[Detect] DDS format = ${isDDS}`);
+
+                    console.log("[Texture] Passing ArrayBuffer to loadTexture...");
+                    const result = await this.loadTexture(gl, arrayBuffer);
+
+                    console.log("[Texture] SUCCESS — texture loaded.");
+                    console.log("===========================================");
+
+                    return result;
+
                 } catch (err) {
-                    console.error("Error loading texture:", err);
+                    console.error("[ERROR] loadTextureFromServer FAILED:");
+                    console.error(err);
+
+                    console.log("[Texture] Using fallback texture instead.");
+                    console.log("===========================================");
+
                     return this.createFallbackTexture(gl);
                 }
-            }
+            };
 
 
-            // loadTexture: accepts (gl, source) where source can be:
-            //  - Blob (image)
-            //  - URL string
-            //  - ArrayBuffer (DDS or raw pixel data)
+            // Robust loadTexture with detailed logging and full DDS support (mipmaps, DX10)
             loadTexture = async (gl, source) => {
+                console.log("=== loadTexture START ===");
                 gl.enable(gl.BLEND);
                 gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                let texture = gl.createTexture();
+
+                const texture = gl.createTexture();
                 gl.bindTexture(gl.TEXTURE_2D, texture);
 
                 // placeholder magenta pixel while we load real data
                 const placeholder = new Uint8Array([255, 0, 255, 255]);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, placeholder);
 
-                // helper - ensure parameters are set when we commit a final texture
                 function applyTextureParams() {
+                    // Use non-mipmap filters by default; if we upload mipmaps later we will change them
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                 }
 
-                // helper to commit image element
+                // Helper to log WebGL errors
+                function logGLError(stage) {
+                    const err = gl.getError();
+                    if (err !== gl.NO_ERROR) {
+                        console.error(`[WebGL][${stage}] gl.getError() -> 0x${err.toString(16)}`);
+                        return true;
+                    }
+                    return false;
+                }
+
+                // Helper to setup from HTMLImageElement
                 function setupTextureFromImage(img) {
                     gl.bindTexture(gl.TEXTURE_2D, texture);
-                    // When passing HTMLImageElement to texImage2D it's allowed in WebGL
+                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
                     applyTextureParams();
+                    console.log("[Texture] Image element uploaded.");
                 }
 
                 // If source is ArrayBuffer -> assume DDS or uncompressed pixel buffer
                 if (source instanceof ArrayBuffer) {
+                    console.log("[Texture] source is ArrayBuffer; attempting DDS parse.");
                     try {
-                        const DDS_MAGIC = 0x20534444;
-                        const DDS_DX10 = 0x30315844;
+                        // alignment
+                        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+
+                        const DDS_MAGIC = 0x20534444; // "DDS "
+                        const DDS_DX10 = 0x30315844;  // "DX10"
                         const dds = new DataView(source);
                         const magic = dds.getUint32(0, true);
-                        if (magic !== DDS_MAGIC) throw new Error('Not a DDS file');
+                        if (magic !== DDS_MAGIC) throw new Error('Not a DDS file (magic mismatch)');
 
                         const height = dds.getUint32(12, true);
                         const width = dds.getUint32(16, true);
+                        const mipMapCount = Math.max(1, dds.getUint32(28, true) || 1);
                         const fourCC = dds.getUint32(84, true);
-                        let offset = 128;
-                        let format = null;
+                        console.log(`[DDS] width=${width}, height=${height}, mipMapCount=${mipMapCount}, fourCC=0x${fourCC.toString(16)}`);
+
+                        // convert fourCC to string for logging
+                        function fourCCToString(cc) {
+                            return String.fromCharCode(
+                                cc & 0xff,
+                                (cc >> 8) & 0xff,
+                                (cc >> 16) & 0xff,
+                                (cc >> 24) & 0xff
+                            );
+                        }
+                        console.log(`[DDS] fourCC string = "${fourCCToString(fourCC)}"`);
+
+                        let offset = 128; // header size
+                        let formatKey = null;
                         let blockSize = 0;
                         let uncompressed = false;
                         let bytesPerPixel = 4;
 
                         if (fourCC === DDS_DX10) {
+                            // DX10 header: first DWORD at offset 128 is dxgiFormat
                             const dxgiFormat = dds.getUint32(offset, true);
-                            offset += 20;
+                            console.log(`[DDS/DX10] dxgiFormat = ${dxgiFormat}`);
+                            offset += 20; // skip DDS_HEADER_DXT10 (20 bytes)
+                            // map a few common DXGI formats to S3TC names (guessing typical ones)
                             switch (dxgiFormat) {
-                                case 71: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break;
-                                case 74: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break;
-                                case 77: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break;
-                                default: throw new Error('Unsupported DX10 DDS format');
-                            }
-                        } else {
-                            switch (fourCC) {
-                                case 0x31545844: format = 'COMPRESSED_RGBA_S3TC_DXT1_EXT'; blockSize = 8; break;
-                                case 0x33545844: format = 'COMPRESSED_RGBA_S3TC_DXT3_EXT'; blockSize = 16; break;
-                                case 0x35545844: format = 'COMPRESSED_RGBA_S3TC_DXT5_EXT'; blockSize = 16; break;
-                                case 0:
-                                    uncompressed = true;
-                                    bytesPerPixel = dds.getUint32(88, true) / 8;
+                                case 71: // DXGI_FORMAT_BC1_UNORM
+                                    formatKey = 'DX10_BC1';
+                                    blockSize = 8;
+                                    break;
+                                case 74: // DXGI_FORMAT_BC2_UNORM
+                                    formatKey = 'DX10_BC2';
+                                    blockSize = 16;
+                                    break;
+                                case 77: // DXGI_FORMAT_BC3_UNORM
+                                    formatKey = 'DX10_BC3';
+                                    blockSize = 16;
                                     break;
                                 default:
-                                    throw new Error('Unsupported DDS legacy format');
+                                    throw new Error('Unsupported DX10 DDS format: ' + dxgiFormat);
+                            }
+                        } else {
+                            // legacy FourCC
+                            switch (fourCC) {
+                                case 0x31545844: // 'DXT1'
+                                    formatKey = 'DXT1';
+                                    blockSize = 8;
+                                    break;
+                                case 0x33545844: // 'DXT3'
+                                    formatKey = 'DXT3';
+                                    blockSize = 16;
+                                    break;
+                                case 0x35545844: // 'DXT5'
+                                    formatKey = 'DXT5';
+                                    blockSize = 16;
+                                    break;
+                                case 0x00000000:
+                                    // no fourCC -> might be uncompressed
+                                    uncompressed = true;
+                                    // ddpfPixelFormat.dwRGBBitCount at offset 88
+                                    bytesPerPixel = (dds.getUint32(88, true) || 32) / 8;
+                                    console.log(`[DDS] Detected uncompressed format, bytesPerPixel=${bytesPerPixel}`);
+                                    break;
+                                default:
+                                    throw new Error('Unsupported DDS legacy format: ' + fourCCToString(fourCC));
                             }
                         }
 
                         gl.bindTexture(gl.TEXTURE_2D, texture);
 
                         if (uncompressed) {
-                            const pixelData = new Uint8Array(source, offset, width * height * bytesPerPixel);
+                            console.log("[DDS] Uploading uncompressed texture (single level).");
+                            const expectedSize = width * height * bytesPerPixel;
+                            const pixelData = new Uint8Array(source, offset, expectedSize);
                             const fmt = (bytesPerPixel === 4) ? gl.RGBA : gl.RGB;
                             gl.texImage2D(gl.TEXTURE_2D, 0, fmt, width, height, 0, fmt, gl.UNSIGNED_BYTE, pixelData);
                             applyTextureParams();
+                            logGLError("texImage2D-uncompressed");
                         } else {
-                            const ext = gl.getExtension('WEBGL_compressed_texture_s3tc') ||
+                            // compressed path: need S3TC ext
+                            const ext =
+                                gl.getExtension('WEBGL_compressed_texture_s3tc') ||
                                 gl.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
                                 gl.getExtension('WEBKIT_WEBGL_compressed_texture_s3tc');
-                            if (!ext) throw new Error('S3TC not supported');
 
+                            console.log("[DDS] S3TC extension:", !!ext);
+
+                            if (!ext) throw new Error('S3TC compressed textures not supported on this device');
+
+                            // map our formatKey -> ext constant (with safe fallbacks)
                             const formatMap = {
-                                'COMPRESSED_RGBA_S3TC_DXT1_EXT': ext.COMPRESSED_RGBA_S3TC_DXT1_EXT,
-                                'COMPRESSED_RGBA_S3TC_DXT3_EXT': ext.COMPRESSED_RGBA_S3TC_DXT3_EXT,
-                                'COMPRESSED_RGBA_S3TC_DXT5_EXT': ext.COMPRESSED_RGBA_S3TC_DXT5_EXT
+                                'DXT1': ext.COMPRESSED_RGB_S3TC_DXT1_EXT || ext.COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                                'DXT3': ext.COMPRESSED_RGBA_S3TC_DXT3_EXT,
+                                'DXT5': ext.COMPRESSED_RGBA_S3TC_DXT5_EXT,
+                                'DX10_BC1': ext.COMPRESSED_RGB_S3TC_DXT1_EXT || ext.COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                                'DX10_BC2': ext.COMPRESSED_RGBA_S3TC_DXT3_EXT,
+                                'DX10_BC3': ext.COMPRESSED_RGBA_S3TC_DXT5_EXT
                             };
-                            const glFormat = formatMap[format];
-                            const imageSize = Math.floor((width + 3) / 4) * Math.floor((height + 3) / 4) * blockSize;
-                            const texData = new Uint8Array(source, offset, imageSize);
-                            gl.compressedTexImage2D(gl.TEXTURE_2D, 0, glFormat, width, height, 0, texData);
-                            applyTextureParams();
+
+                            const glFormat = formatMap[formatKey];
+                            if (!glFormat) throw new Error('Unsupported/unknown compressed format key: ' + formatKey);
+
+                            // upload each mip level if present
+                            let widthLevel = width;
+                            let heightLevel = height;
+                            let currentOffset = offset;
+                            console.log(`[DDS] Uploading compressed texture. baseOffset=${offset}, baseSize ~ ${Math.floor((Math.max(1, ((width + 3) >> 2)) * Math.max(1, ((height + 3) >> 2)) * blockSize))} bytes`);
+
+                            for (let level = 0; level < mipMapCount; level++) {
+                                const w = Math.max(1, widthLevel);
+                                const h = Math.max(1, heightLevel);
+                                const blocksAcross = Math.max(1, Math.floor((w + 3) / 4));
+                                const blocksDown = Math.max(1, Math.floor((h + 3) / 4));
+                                const size = blocksAcross * blocksDown * blockSize;
+
+                                console.log(`[DDS][mip ${level}] w=${w}, h=${h}, blocks=${blocksAcross}x${blocksDown}, bytes=${size}, offset=${currentOffset}`);
+                                // BOUNDS CHECK: make sure we won't read past the buffer
+                                if (currentOffset + size > source.byteLength) {
+                                    console.warn(`[DDS] Truncated file: expected ${size} bytes at offset ${currentOffset}, but file is ${source.byteLength}. Stopping at level ${level}.`);
+                                    break; // stop uploading further levels (we must still ensure texture completeness below)
+                                }
+
+                                const byteArray = new Uint8Array(source, currentOffset, size);
+                                gl.compressedTexImage2D(gl.TEXTURE_2D, level, glFormat, w, h, 0, byteArray);
+
+                                if (logGLError(`compressedTexImage2D-level${level}`)) {
+                                    console.error("[DDS] WebGL error when uploading compressed level", level);
+                                }
+
+                                currentOffset += size;
+                                widthLevel = Math.floor(widthLevel / 2);
+                                heightLevel = Math.floor(heightLevel / 2);
+
+                                // stop if width/height already 1 and no extra data
+                                if (widthLevel <= 0 && heightLevel <= 0) break;
+                            }
+
+                            // if we uploaded only level 0 but mipMapCount == 1, ensure filters are non-mipmap; if more than 1, enable mipmap filters
+                            if (mipMapCount > 1) {
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                            } else {
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                            }
                         }
+
+                        // tidy up
+                        gl.bindTexture(gl.TEXTURE_2D, null);
+                        console.log("=== loadTexture SUCCESS (DDS) ===");
+                        return texture;
                     } catch (e) {
-                        console.warn('Failed to load DDS texture, using fallback white', e);
-                        // Make sure params are set
+                        console.error("[loadTexture] Failed to load ArrayBuffer as DDS/uncompressed:", e);
+                        // fallback white
                         const white = new Uint8Array([255, 255, 255, 255]);
                         gl.bindTexture(gl.TEXTURE_2D, texture);
                         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, white);
                         applyTextureParams();
+                        gl.bindTexture(gl.TEXTURE_2D, null);
+                        return texture;
                     }
-                    return texture;
                 }
 
                 // unknown source -> fallback
                 console.warn('loadTexture: unknown source type, returning fallback');
                 const fallback = this.createFallbackTexture(gl);
                 return fallback;
-            }
+            };
 
-
-            async renderXACModelWorld(xacData) {
-                const previewContent = document.getElementById('previewContent');
-
-                // If a previous instance created resources, clean them up first
-                if (previewContent._xacCleanup) {
-                    try { previewContent._xacCleanup(); } catch (e) { console.warn('cleanup failed', e); }
-                    previewContent._xacCleanup = null;
-                }
-
-                previewContent.classList.add("preview-xac");
-
-                // Insert canvas in a stat-card container with scoped inline styles
-                previewContent.innerHTML = `
-        <div class="stat-card" 
-             style="display:flex; justify-content:center; align-items:center; width:100%; height:70vh;">
-            <canvas id="glCanvas" class="rounded shadow" 
-                    style="background:#111; display:block; width:100%; height:100%;">
-            </canvas>
-        </div>
-    `;
-
-                let canvas = document.getElementById('glCanvas');
-
-                // Keep references for cleanup
-                const cleanupItems = {
-                    rafId: null,
-                    listeners: [],
-                    gl: null,
-                    vbo: null,
-                    ibo: null,
-                    vs: null,
-                    fs: null,
-                    program: null,
-                    textures: [],
-                };
-
-
-                // Resize helper — set drawing buffer size to match displayed size (with HiDPI support)
-                function resizeCanvas() {
-                    if (!canvas) return;
-                    const dpr = window.devicePixelRatio || 1;
-                    const rect = canvas.getBoundingClientRect();
-
-                    const w = Math.max(1, Math.floor(rect.width * dpr));
-                    const h = Math.max(1, Math.floor(rect.height * dpr));
-
-                    if (canvas.width !== w || canvas.height !== h) {
-                        canvas.width = w;
-                        canvas.height = h;
-                        if (cleanupItems.gl) cleanupItems.gl.viewport(0, 0, w, h);
-                    }
-                }
-
-                // Attach a listener and remember it for cleanup
-                function addListener(target, type, fn, opts) {
-                    target.addEventListener(type, fn, opts);
-                    cleanupItems.listeners.push({ target, type, fn, opts });
-                }
-
-                // --- GL context ---
-                const gl = canvas.getContext('webgl', { preserveDrawingBuffer: false });
-                if (!gl) {
-                    console.error('WebGL not supported');
-                    return;
-                }
-
-                cleanupItems.gl = gl;
-
-                // Initial resize (defer to next frame so layout has settled)
-                requestAnimationFrame(resizeCanvas);
-
-                // Watch window resizes
-                addListener(window, 'resize', resizeCanvas);
-
-
-                // --- Extract mesh data (unchanged logic, just scoped) ---
-                const positions = [], normals = [], indices = [], uvs = [], submeshInfos = [];;
-
-
-                const extractNode = async (node, parentTransform = { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }) => {
-                    if (!node) return;
-
-                    // Local transform from Rust JSON
-                    const localPos = node.position ? [node.position.x, node.position.y, node.position.z] : [0, 0, 0];
-                    const localScale = node.scale ? [node.scale.x, node.scale.y, node.scale.z] : [1, 1, 1];
-                    const localRot = node.rotation ? [node.rotation.x, node.rotation.y, node.rotation.z, node.rotation.w] : [0, 0, 0, 1];
-
-                    // Combine with parent transform
-                    const worldPos = [
-                        parentTransform.position[0] + localPos[0],
-                        parentTransform.position[1] + localPos[1],
-                        parentTransform.position[2] + localPos[2],
-                    ];
-                    const worldScale = [
-                        parentTransform.scale[0] * localScale[0],
-                        parentTransform.scale[1] * localScale[1],
-                        parentTransform.scale[2] * localScale[2],
-                    ];
-
-                    if (node.model && node.model.submeshes) {
-                        for (const sub of node.model.submeshes) {
-                            // ✅ Only include submesh if it has a name or a texture
-                            if ((!sub.name || sub.name.trim() === "" || sub.name.toLowerCase().includes("none")) &&
-                                (!sub.textures || sub.textures.trim() === "" || sub.textures.toLowerCase().includes("none"))) {
-                                continue; // skip unnamed or texture-less submesh
-                            }
-
-
-
-                            // store texture reference (load or fallback)
-                            let tex = null;
-                            if (sub.textures) {
-                                tex = await this.loadTextureFromServer(gl, sub.textures, 0);
-                            }
-
-
-                            const baseIndex = positions.length / 3;
-                            if (sub.positions && sub.positions.length > 0) {
-                                for (let i = 0; i < sub.positions.length; i++) {
-                                    const pos = sub.positions[i];
-                                    positions.push(pos.x, pos.y, pos.z);
-
-                                    if (sub.normals && sub.normals[i]) {
-                                        const n = sub.normals[i];
-                                        normals.push(n.x, n.y, n.z);
-                                    } else normals.push(0, 0, 1);
-
-                                    if (sub.uvcoords && sub.uvcoords[i]) {
-                                        uvs.push(sub.uvcoords[i].u ?? 0, sub.uvcoords[i].v ?? 0);
-                                    } else {
-                                        uvs.push(0, 0);
-                                    }
-
-                                }
-                            }
-                            if (sub.indices && sub.indices.length > 0) {
-                                for (const idx of sub.indices) indices.push(baseIndex + idx);
-                            } else {
-                                const vertCount = sub.positions ? sub.positions.length : 4;
-                                for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
-                            }
-
-                            submeshInfos.push({
-                                texture: tex,
-                                indexOffset: indices.length - (sub.indices ? sub.indices.length : sub.positions.length),
-                                indexCount: sub.indices ? sub.indices.length : sub.positions.length
-                            });
-
-                            if (!tex) {
-                                tex = this.createFallbackTexture(gl);
-                            } else if (tex !== gl._fallbackWhiteTexture) {
-                                cleanupItems.textures.push(tex);
-                            }
-
-                        }
-                    }
-                    if (node.children) for (const child of node.children) await extractNode(child, { position: worldPos, rotation: localRot, scale: worldScale });
-
-                }
-
-                if (xacData.root_nodes && xacData.root_nodes.length > 0) {
-                    for (const root of xacData.root_nodes) await extractNode(root);
-                } else {
-                    positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
-                    normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
-                    indices.push(0, 1, 2, 2, 3, 0);
-                }
-
-                // --- Bounding box & view setup (unchanged) ---
-                let minX = Infinity, minY = Infinity, minZ = Infinity;
-                let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-                for (let i = 0; i < positions.length; i += 3) {
-                    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
-                    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
-                    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
-                }
-                const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2, centerZ = (minZ + maxZ) / 2;
-                const sizeX = maxX - minX, sizeY = maxY - minY, sizeZ = maxZ - minZ;
-                const maxSize = Math.max(sizeX, sizeY, sizeZ) || 1;
-                let distance = maxSize * 1.5;
-
-                // --- Interleave vertex data ---
-                const vertexCount = positions.length / 3;
-                // Assuming vertexData layout: position (3), normal (3), texcoord (2)
-                const vertexData = new Float32Array(vertexCount * 8);
-                for (let i = 0; i < vertexCount; i++) {
-                    vertexData[i * 8 + 0] = positions[i * 3 + 0];
-                    vertexData[i * 8 + 1] = positions[i * 3 + 1];
-                    vertexData[i * 8 + 2] = positions[i * 3 + 2];
-                    vertexData[i * 8 + 3] = normals[i * 3 + 0];
-                    vertexData[i * 8 + 4] = normals[i * 3 + 1];
-                    vertexData[i * 8 + 5] = normals[i * 3 + 2];
-                    vertexData[i * 8 + 6] = uvs[i * 2 + 0] || 0;
-                    vertexData[i * 8 + 7] = uvs[i * 2 + 1] || 0;
-                }
-
-
-                const needUint32 = (positions.length / 3 > 65535);
-                const idxExt = gl.getExtension('OES_element_index_uint');
-                let indexArray;
-                let indexType;
-                if (needUint32 && idxExt) {
-                    indexArray = new Uint32Array(indices);
-                    indexType = gl.UNSIGNED_INT;
-                } else {
-                    if (needUint32 && !idxExt) {
-                        console.warn('Mesh needs >65535 indices but OES_element_index_uint missing. Truncating indices.');
-                        // truncate indices to 65535
-                        indices = indices.slice(0, 65535);
-                    }
-                    indexArray = new Uint16Array(indices);
-                    indexType = gl.UNSIGNED_SHORT;
-                }
-
-
-                // --- Shaders (same sources) ---
-                const vsSource = `
-attribute vec3 aPosition;
-attribute vec3 aNormal;
-attribute vec2 aTexCoord;
-varying vec2 vTexCoord;
-varying vec3 vNormal;
-
-uniform mat4 uMVP;
-
-void main() {
-    gl_Position = uMVP * vec4(aPosition,1.0);
-    vTexCoord = aTexCoord;
-    vNormal = aNormal;
-}
-`;
-
-                const fsSource = `
-                precision mediump float;
-                varying vec2 vTexCoord;
-                varying vec3 vNormal;
-                uniform sampler2D uTexture;
-
-                void main() {
-                    vec3 texColor = texture2D(uTexture, vTexCoord).rgb;
-
-                    vec3 normal = normalize(vNormal);
-
-                    // Six directional lights (+X, -X, +Y, -Y, +Z, -Z)
-                    vec3 lightDirs[6];
-                    lightDirs[0] = vec3( 1.0,  0.0,  0.0);
-                    lightDirs[1] = vec3(-1.0,  0.0,  0.0);
-                    lightDirs[2] = vec3( 0.0,  1.0,  0.0);
-                    lightDirs[3] = vec3( 0.0, -1.0,  0.0);
-                    lightDirs[4] = vec3( 0.0,  0.0,  1.0);
-                    lightDirs[5] = vec3( 0.0,  0.0, -1.0);
-
-                    float diff = 0.0;
-                    for (int i = 0; i < 6; i++) {
-                        diff += max(dot(normal, lightDirs[i]), 0.0);
-                    }
-                    diff /= 4.0; // average contribution
-
-                    vec3 ambient = texColor * 0.2; // ambient term
-                    vec3 color = texColor * diff + ambient;
-
-                    gl_FragColor = vec4(color, 1.0);
-                }
-
-                `;
-
-
-                function compileShader(src, type) {
-                    const s = gl.createShader(type);
-                    gl.shaderSource(s, src);
-                    gl.compileShader(s);
-                    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-                        const log = gl.getShaderInfoLog(s);
-                        console.error('Shader compile error:', log);
-                    }
-                    return s;
-                }
-
-                // Create program and buffers
-                const vs = compileShader(vsSource, gl.VERTEX_SHADER);
-                const fs = compileShader(fsSource, gl.FRAGMENT_SHADER);
-                const program = gl.createProgram();
-                if (vs) gl.attachShader(program, vs);
-                if (fs) gl.attachShader(program, fs);
-                gl.linkProgram(program);
-                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                    console.error('Program link error:', gl.getProgramInfoLog(program));
-                }
-                gl.useProgram(program);
-
-                const vbo = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-                gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
-
-                const ibo = gl.createBuffer();
-                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
-
-                // Attribute setup
-                const aPos = gl.getAttribLocation(program, 'aPosition');
-                const aNormal = gl.getAttribLocation(program, 'aNormal');
-                const aTex = gl.getAttribLocation(program, 'aTexCoord');
-                gl.enableVertexAttribArray(aPos);
-                gl.enableVertexAttribArray(aNormal);
-                gl.enableVertexAttribArray(aTex);
-
-                const stride = 8 * 4; // 8 floats: pos+normal+uv
-                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
-                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
-                gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, stride, 24);
-
-
-                const uTexture = gl.getUniformLocation(program, 'uTexture');
-                const uMVP = gl.getUniformLocation(program, 'uMVP');
-
-                // helper matrices (unchanged)
-                function identity() { return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
-                function perspective(fov, aspect, near, far) {
-                    const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
-                    return new Float32Array([
-                        f / aspect, 0, 0, 0,
-                        0, f, 0, 0,
-                        0, 0, (far + near) * nf, -1,
-                        0, 0, (2 * far * near) * nf, 0
-                    ]);
-                }
-                function multiply(a, b) {
-                    const o = new Float32Array(16);
-                    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
-                        o[j * 4 + i] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
-                    return o;
-                }
-                function translate(m, x, y, z) { const t = identity(); t[12] = -x; t[13] = -y; t[14] = -z - distance; return multiply(m, t); }
-                function rotateX(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[5] = c; r[6] = s; r[9] = -s; r[10] = c; return multiply(m, r); }
-                function rotateY(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[0] = c; r[2] = s; r[8] = -s; r[10] = c; return multiply(m, r); }
-
-                let rotX = 0, rotY = 0;
-                let mouseDown = false, lastX = 0, lastY = 0;
-
-                // Single set of pointer handlers (no duplicates)
-                addListener(canvas, 'mousedown', e => { mouseDown = true; lastX = e.clientX; lastY = e.clientY; });
-                addListener(window, 'mouseup', () => { mouseDown = false; });
-                addListener(canvas, 'mousemove', e => {
-                    if (mouseDown) {
-                        rotY -= (e.clientX - lastX) * 0.01;
-                        // Update rotX with clamping (same clamp as earlier)
-                        rotX += (e.clientY - lastY) * 0.01;
-                        const maxRot = Math.PI / 2 - 0.01;
-                        if (rotX > maxRot) rotX = maxRot;
-                        if (rotX < -maxRot) rotX = -maxRot;
-
-                        lastX = e.clientX;
-                        lastY = e.clientY;
-                    }
-                });
-
-                addListener(canvas, 'wheel', e => {
-                    e.preventDefault();
-                    const zoomSpeed = 1.02;
-                    if (e.deltaY < 0) {
-                        distance /= zoomSpeed;
-                    } else {
-                        distance *= zoomSpeed;
-                    }
-                    distance = Math.max(maxSize * 0.5, Math.min(maxSize * 10, distance));
-                }, { passive: false });
-
-                // store GL resources for cleanup
-                cleanupItems.vbo = vbo;
-                cleanupItems.ibo = ibo;
-                cleanupItems.vs = vs;
-                cleanupItems.fs = fs;
-                cleanupItems.program = program;
-
-                function renderLoop() {
-                    resizeCanvas();
-                    gl.clearColor(0.1, 0.1, 0.1, 1);
-                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-                    gl.enable(gl.DEPTH_TEST);
-
-                    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.01, 30000);
-                    let view = translate(identity(), centerX, centerY, centerZ);
-                    view = rotateX(view, rotX);
-                    view = rotateY(view, rotY);
-                    const mvp = multiply(proj, view);
-                    gl.uniformMatrix4fv(uMVP, false, mvp);
-
-                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-
-                    for (const sub of submeshInfos) {
-                        if (!sub.texture) {
-                        } else {
-                            gl.activeTexture(gl.TEXTURE0);
-                            gl.bindTexture(gl.TEXTURE_2D, sub.texture);
-                            gl.uniform1i(uTexture, 0);
-                        }
-
-                        gl.drawElements(gl.TRIANGLES, sub.indexCount, indexType, sub.indexOffset * indexType.BYTES_PER_ELEMENT);
-                    }
-
-                    cleanupItems.rafId = requestAnimationFrame(renderLoop);
-                }
-
-                renderLoop();
-
-                // Provide a cleanup function so future calls can dispose of resources
-                previewContent._xacCleanup = () => {
-                    // Cancel RAF
-                    if (cleanupItems.rafId != null) {
-                        try { cancelAnimationFrame(cleanupItems.rafId); } catch (e) { }
-                        cleanupItems.rafId = null;
-                    }
-                    // Remove listeners
-                    for (const L of cleanupItems.listeners) {
-                        try { L.target.removeEventListener(L.type, L.fn, L.opts); } catch (e) { }
-                    }
-                    cleanupItems.listeners.length = 0;
-
-                    // Delete GL resources (if context still available)
-                    try {
-                        const g = cleanupItems.gl;
-                        if (g) {
-                            gl.bindTexture(gl.TEXTURE_2D, null);
-                            for (const t of cleanupItems.textures) {
-                                try { g.deleteTexture(t); } catch (e) { }
-                            }
-                            cleanupItems.textures = [];
-                            if (cleanupItems.vbo) { g.deleteBuffer(cleanupItems.vbo); cleanupItems.vbo = null; }
-                            if (cleanupItems.ibo) { g.deleteBuffer(cleanupItems.ibo); cleanupItems.ibo = null; }
-                            if (cleanupItems.program) {
-                                try {
-                                    if (cleanupItems.vs) { g.detachShader(cleanupItems.program, cleanupItems.vs); g.deleteShader(cleanupItems.vs); cleanupItems.vs = null; }
-                                    if (cleanupItems.fs) { g.detachShader(cleanupItems.program, cleanupItems.fs); g.deleteShader(cleanupItems.fs); cleanupItems.fs = null; }
-                                } catch (e) { /* some browsers throw when detaching */ }
-                                try { g.deleteProgram(cleanupItems.program); } catch (e) { }
-                                cleanupItems.program = null;
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('GL cleanup error', e);
-                    }
-
-                    // Clear canvas and remove DOM nodes if desired (kept minimal)
-                    // previewContent.innerHTML = ''; // if you want to fully remove canvas output
-                };
-
-                // (Optional) Also cleanup when the canvas context is lost
-                function onContextLost(ev) {
-                    ev.preventDefault();
-                    if (previewContent._xacCleanup) previewContent._xacCleanup();
-                }
-                addListener(canvas, 'webglcontextlost', onContextLost);
-            }
 
 
             async renderXACModel(xacData) {
@@ -1838,33 +1540,53 @@ void main() {
 
                 // Watch window resizes
                 addListener(window, 'resize', resizeCanvas);
+                // --- Extract mesh data ---
+                const positions = [], normals = [], indices = [], uvs = [], submeshInfos = [];
 
-
-                // --- Extract mesh data (unchanged logic, just scoped) ---
-                const positions = [], normals = [], indices = [], uvs = [], submeshInfos = [];;
-
-
-                const extractNode = async (node) => {
+                const extractNode = async (node, depth = 0) => {
                     if (!node) return;
+
+                    const indent = "  ".repeat(depth);
+
+                    console.log(`${indent}Processing node:`, node.name ?? "(unnamed)");
+
                     if (node.model && node.model.submeshes) {
+                        console.log(`${indent}  Submeshes: ${node.model.submeshes.length}`);
+
                         for (const sub of node.model.submeshes) {
-                            // ✅ Only include submesh if it has a name or a texture
+
+                            // Skip submesh if unnamed or no texture
                             if ((!sub.name || sub.name.trim() === "" || sub.name.toLowerCase().includes("none")) &&
                                 (!sub.textures || sub.textures.trim() === "" || sub.textures.toLowerCase().includes("none"))) {
-                                continue; // skip unnamed or texture-less submesh
+
+                                console.warn(`${indent}  ⚠ Skipping submesh (no name or texture):`, sub.name);
+                                continue;
                             }
 
+                            console.log(`${indent}  ▶ Submesh: ${sub.name}`);
+                            console.log(`${indent}     Texture: ${sub.textures || "(none)"}`);
 
-
-                            // store texture reference (load or fallback)
+                            // Load texture
                             let tex = null;
                             if (sub.textures) {
-                                tex = await this.loadTextureFromServer(gl, sub.textures, 0);
+                                try {
+                                    tex = await this.loadTextureFromServer(gl, sub.textures, 0);
+                                    if (!tex) {
+                                        console.warn(`${indent}     ⚠ Texture failed, using fallback white`);
+                                    } else {
+                                        console.log(`${indent}     ✔ Texture loaded`);
+                                    }
+                                } catch (e) {
+                                    console.error(`${indent}     ❌ Texture load error:`, e);
+                                }
                             }
 
-
                             const baseIndex = positions.length / 3;
+
+                            // Positions / Normals / UVs
                             if (sub.positions && sub.positions.length > 0) {
+                                console.log(`${indent}     Vertices: ${sub.positions.length}`);
+
                                 for (let i = 0; i < sub.positions.length; i++) {
                                     const pos = sub.positions[i];
                                     positions.push(pos.x, pos.y, pos.z);
@@ -1872,94 +1594,171 @@ void main() {
                                     if (sub.normals && sub.normals[i]) {
                                         const n = sub.normals[i];
                                         normals.push(n.x, n.y, n.z);
-                                    } else normals.push(0, 0, 1);
+                                    } else {
+                                        normals.push(0, 0, 1);
+                                    }
 
                                     if (sub.uvcoords && sub.uvcoords[i]) {
-                                        uvs.push(sub.uvcoords[i].u ?? 0, sub.uvcoords[i].v ?? 0);
+                                        uvs.push(sub.uvcoords[i].x ?? 0, 1.0 - (sub.uvcoords[i].y ?? 0));
                                     } else {
                                         uvs.push(0, 0);
                                     }
-
                                 }
+                            } else {
+                                console.warn(`${indent}     ⚠ No position data, skipping`);
                             }
+
+                            // Indices
                             if (sub.indices && sub.indices.length > 0) {
+                                console.log(`${indent}     Indices: ${sub.indices.length}`);
                                 for (const idx of sub.indices) indices.push(baseIndex + idx);
                             } else {
                                 const vertCount = sub.positions ? sub.positions.length : 4;
+                                console.warn(`${indent}     ⚠ No index data, auto-generating ${vertCount} sequential indices`);
                                 for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
                             }
 
+                            const indexCount = sub.indices ? sub.indices.length : (sub.positions?.length ?? 0);
+                            const indexOffset = indices.length - indexCount;
+
+                            console.log(`${indent}     → indexOffset=${indexOffset}, indexCount=${indexCount}`);
+
                             submeshInfos.push({
                                 texture: tex,
-                                indexOffset: indices.length - (sub.indices ? sub.indices.length : sub.positions.length),
-                                indexCount: sub.indices ? sub.indices.length : sub.positions.length
+                                indexOffset,
+                                indexCount
                             });
 
+                            // Fallback texture
                             if (!tex) {
                                 tex = this.createFallbackTexture(gl);
                             } else if (tex !== gl._fallbackWhiteTexture) {
                                 cleanupItems.textures.push(tex);
                             }
-
                         }
                     }
-                    if (node.children) for (const child of node.children) await extractNode(child);
 
-                }
+                    if (node.children) {
+                        for (const child of node.children) {
+                            await extractNode(child, depth + 1);
+                        }
+                    }
+                };
 
+                // Start extracting
                 if (xacData.root_nodes && xacData.root_nodes.length > 0) {
+                    console.log("=== Begin XAC Mesh Extraction ===");
                     for (const root of xacData.root_nodes) await extractNode(root);
+                    console.log("=== Mesh Extraction Complete ===");
                 } else {
+                    console.warn("⚠ No root_nodes found. Using fallback quad.");
                     positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
                     normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
+                    uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
                     indices.push(0, 1, 2, 2, 3, 0);
                 }
 
-                // --- Bounding box & view setup (unchanged) ---
+                // --- Bounding box & view setup ---
+                console.log("=== Compute Bounding Box ===");
+
                 let minX = Infinity, minY = Infinity, minZ = Infinity;
                 let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
                 for (let i = 0; i < positions.length; i += 3) {
                     const x = positions[i], y = positions[i + 1], z = positions[i + 2];
-                    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
-                    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    minZ = Math.min(minZ, z);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                    maxZ = Math.max(maxZ, z);
                 }
-                const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2, centerZ = (minZ + maxZ) / 2;
-                const sizeX = maxX - minX, sizeY = maxY - minY, sizeZ = maxZ - minZ;
+
+                console.log("Bounding Box:");
+                console.log("  min:", minX, minY, minZ);
+                console.log("  max:", maxX, maxY, maxZ);
+
+                const centerX = (minX + maxX) / 2;
+                const centerY = (minY + maxY) / 2;
+                const centerZ = (minZ + maxZ) / 2;
+
+                const sizeX = maxX - minX;
+                const sizeY = maxY - minY;
+                const sizeZ = maxZ - minZ;
+
                 const maxSize = Math.max(sizeX, sizeY, sizeZ) || 1;
                 let distance = maxSize * 1.5;
 
+                console.log(`  maxSize=${maxSize}, cameraDistance=${distance}`);
+
+
                 // --- Interleave vertex data ---
                 const vertexCount = positions.length / 3;
-                // Assuming vertexData layout: position (3), normal (3), texcoord (2)
+                console.log("=== Interleave Vertex Data ===");
+                console.log(`Vertex Count: ${vertexCount}`);
+
+                if (uvs.length / 2 !== vertexCount) {
+                    console.warn(
+                        `⚠ UV count mismatch! UVs=${uvs.length / 2}, Vertices=${vertexCount}. `
+                        + `Missing UVs may cause gray texture.`
+                    );
+                    console.log("Sample UVs:", uvs.slice(0, 10));
+                }
+
                 const vertexData = new Float32Array(vertexCount * 8);
+
                 for (let i = 0; i < vertexCount; i++) {
                     vertexData[i * 8 + 0] = positions[i * 3 + 0];
                     vertexData[i * 8 + 1] = positions[i * 3 + 1];
                     vertexData[i * 8 + 2] = positions[i * 3 + 2];
+
                     vertexData[i * 8 + 3] = normals[i * 3 + 0];
                     vertexData[i * 8 + 4] = normals[i * 3 + 1];
                     vertexData[i * 8 + 5] = normals[i * 3 + 2];
-                    vertexData[i * 8 + 6] = uvs[i * 2 + 0] || 0;
-                    vertexData[i * 8 + 7] = uvs[i * 2 + 1] || 0;
+
+                    const u = uvs[i * 2 + 0] ?? 0;
+                    const v = uvs[i * 2 + 1] ?? 0;
+
+                    vertexData[i * 8 + 6] = u;
+                    vertexData[i * 8 + 7] = v;
                 }
 
+                console.log("Interleaved vertexData created. Total floats:", vertexData.length);
 
-                const needUint32 = (positions.length / 3 > 65535);
+
+                // --- Index Array Setup ---
+                console.log("=== Index Buffer Setup ===");
+                console.log(`Index Count: ${indices.length}`);
+
+                const needUint32 = (vertexCount > 65535);
                 const idxExt = gl.getExtension('OES_element_index_uint');
+
                 let indexArray;
                 let indexType;
-                if (needUint32 && idxExt) {
-                    indexArray = new Uint32Array(indices);
-                    indexType = gl.UNSIGNED_INT;
-                } else {
-                    if (needUint32 && !idxExt) {
-                        console.warn('Mesh needs >65535 indices but OES_element_index_uint missing. Truncating indices.');
-                        // truncate indices to 65535
+
+                if (needUint32) {
+                    if (idxExt) {
+                        console.log("Using Uint32 indices (extension available).");
+                        indexArray = new Uint32Array(indices);
+                        indexType = gl.UNSIGNED_INT;
+                    } else {
+                        console.warn(
+                            "⚠ Mesh requires >65535 vertices but OES_element_index_uint is missing.\n" +
+                            "Truncating indices to 65535 — geometry may be broken!"
+                        );
+
                         indices = indices.slice(0, 65535);
+                        indexArray = new Uint16Array(indices);
+                        indexType = gl.UNSIGNED_SHORT;
                     }
+                } else {
+                    console.log("Using Uint16 indices (fits).");
                     indexArray = new Uint16Array(indices);
                     indexType = gl.UNSIGNED_SHORT;
                 }
+
+                console.log(`IndexType = ${indexType === gl.UNSIGNED_INT ? "UNSIGNED_INT" : "UNSIGNED_SHORT"}`);
+                console.log("IndexArray length:", indexArray.length);
 
 
                 // --- Shaders (same sources) ---
@@ -2058,6 +1857,13 @@ void main() {
                 gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
                 gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, stride, 24);
 
+                if (aPos < 0) console.warn('aPosition attribute not found');
+                if (aNormal < 0) console.warn('aNormal attribute not found');
+                if (aTex < 0) console.warn('aTexCoord attribute not found');
+
+                // UV sanity
+                console.log('UV count:', uvs.length / 2);
+
 
                 const uTexture = gl.getUniformLocation(program, 'uTexture');
                 const uMVP = gl.getUniformLocation(program, 'uMVP');
@@ -2121,6 +1927,19 @@ void main() {
                 cleanupItems.fs = fs;
                 cleanupItems.program = program;
 
+                // Helper for index byte size (define once)
+                function bytesPerIndex(type) {
+                    return (type === gl.UNSIGNED_INT) ? 4 : 2;
+                }
+
+                // Ensure program is active and sampler set once
+                gl.useProgram(program);
+                if (uTexture !== -1 && uTexture !== null) {
+                    gl.uniform1i(uTexture, 0); // sampler uses texture unit 0
+                } else {
+                    console.warn('uTexture uniform location appears invalid:', uTexture);
+                }
+
                 function renderLoop() {
                     resizeCanvas();
                     gl.clearColor(0.1, 0.1, 0.1, 1);
@@ -2132,19 +1951,34 @@ void main() {
                     view = rotateX(view, rotX);
                     view = rotateY(view, rotY);
                     const mvp = multiply(proj, view);
+
+                    // upload MVP once
                     gl.uniformMatrix4fv(uMVP, false, mvp);
 
+                    // bind element array once
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
 
-                    for (const sub of submeshInfos) {
-                        if (!sub.texture) {
-                        } else {
-                            gl.activeTexture(gl.TEXTURE0);
-                            gl.bindTexture(gl.TEXTURE_2D, sub.texture);
-                            gl.uniform1i(uTexture, 0);
-                        }
+                    // precompute index byte size for chosen indexType
+                    const indexByteSize = bytesPerIndex(indexType);
 
-                        gl.drawElements(gl.TRIANGLES, sub.indexCount, indexType, sub.indexOffset * indexType.BYTES_PER_ELEMENT);
+                    for (const sub of submeshInfos) {
+                        if (!sub || sub.indexCount <= 0) continue;
+
+                        // bind texture (or fallback) to texture unit 0
+                        const texToBind = sub.texture || gl._fallbackWhiteTexture;
+                        gl.activeTexture(gl.TEXTURE0);
+                        gl.bindTexture(gl.TEXTURE_2D, texToBind);
+                        // sampler already set to unit 0 above; if you prefer to be explicit per-submesh you can uncomment:
+                        // gl.uniform1i(uTexture, 0);
+
+                        // compute byte offset for drawElements (must be in BYTES)
+                        const offsetBytes = sub.indexOffset * indexByteSize;
+
+                        // Optional diagnostic (uncomment to debug)
+                        // console.log('Drawing submesh', { indexCount: sub.indexCount, indexOffset: sub.indexOffset, offsetBytes });
+
+                        // draw
+                        gl.drawElements(gl.TRIANGLES, sub.indexCount, indexType, offsetBytes);
                     }
 
                     cleanupItems.rafId = requestAnimationFrame(renderLoop);

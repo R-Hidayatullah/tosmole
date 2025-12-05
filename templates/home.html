@@ -1568,16 +1568,21 @@
 
                             // Load texture
                             let tex = null;
+
                             if (sub.textures) {
+                                // --- Replace .tga / .TGA → .dds ---
+                                let texPath = sub.textures.replace(/\.tga$/i, ".dds");
+
                                 try {
-                                    tex = await this.loadTextureFromServer(gl, sub.textures, 0);
+                                    tex = await this.loadTextureFromServer(gl, texPath, 0);
+
                                     if (!tex) {
-                                        console.warn(`${indent}     ⚠ Texture failed, using fallback white`);
+                                        console.warn(`${indent}     ⚠ Texture failed, using fallback white (${texPath})`);
                                     } else {
-                                        console.log(`${indent}     ✔ Texture loaded`);
+                                        console.log(`${indent}     ✔ Texture loaded (${texPath})`);
                                     }
                                 } catch (e) {
-                                    console.error(`${indent}     ❌ Texture load error:`, e);
+                                    console.error(`${indent}     ❌ Texture load error (${texPath}):`, e);
                                 }
                             }
 

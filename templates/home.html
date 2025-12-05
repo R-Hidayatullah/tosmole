@@ -1176,11 +1176,15 @@
             normalizeTextureName(texPath) {
                 if (!texPath) return null;
 
-                // change extension .tga/.png/.bmp → .dds
-                const name = texPath.replace(/\.(tga|png|bmp|jpg|jpeg|dds)$/i, ".dds");
+                // extract the last part: "arrow.dds" from "char_texture/misc/arrow.dds"
+                const base = texPath.split("/").pop();
+
+                // change extension .tga/.png/.bmp/.jpg/.jpeg/.dds → .dds
+                const name = base.replace(/\.(tga|png|bmp|jpg|jpeg|dds)$/i, ".dds");
 
                 return name.toLowerCase();
             }
+
 
             async findTexturePath(texPath) {
                 const fileName = this.normalizeTextureName(texPath);

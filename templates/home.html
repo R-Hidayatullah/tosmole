@@ -968,8 +968,8 @@
                         const mp3Data = await response.blob();
                         this.renderMP3Audio(mp3Data);
                     } else if (contentType.includes('application/json') && extension === '3dworld') {
-                        const xacDataWorld = await response.json();
-                        this.renderXACModelWorld(xacDataWorld);
+                        //const xacDataWorld = await response.json();
+                        //this.renderXACModelWorld(xacDataWorld);
                     }
                     else if (contentType.includes('application/json') && extension === 'xac') {
                         const xacData = await response.json();

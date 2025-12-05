@@ -318,9 +318,21 @@ pub async fn preview_file(
     // Group image formats
     let image_extensions = ["tga", "png", "jpg", "jpeg", "bmp", "dds"];
 
+    let is_dds = data.len() > 4 && &data[0..4] == b"DDS ";
+
+    if _full_path.contains("nocolor") {
+        return match crate::stb::load_tga_from_memory(&data) {
+            Some(img) => match crate::stb::encode_png_to_memory(&img) {
+                Some(png_bytes) => HttpResponse::Ok().content_type("image/png").body(png_bytes),
+                None => HttpResponse::InternalServerError().body("Failed to encode PNG from TGA"),
+            },
+            None => HttpResponse::InternalServerError().body("Failed to decode TGA image"),
+        };
+    }
+
     if image_extensions.contains(&ext.as_str()) {
         // TGA conversion
-        if ext == "tga" {
+        if !is_dds && ext == "tga" || _full_path.contains("nocolor") {
             return match crate::stb::load_tga_from_memory(&data) {
                 Some(img) => match crate::stb::encode_png_to_memory(&img) {
                     Some(png_bytes) => HttpResponse::Ok().content_type("image/png").body(png_bytes),
@@ -367,7 +379,7 @@ pub async fn preview_file(
     }
 
     // 3dworld format
-    if ext == "3dworld" {
+    if ext == "dworld" {
         return match World::from_bytes(&data) {
             Ok(dworld) => {
                 let mut scenes_data = Vec::new();

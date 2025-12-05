@@ -379,7 +379,7 @@ pub async fn preview_file(
     }
 
     // 3dworld format
-    if ext == "dworld" {
+    if ext == "3dworld" {
         return match World::from_bytes(&data) {
             Ok(dworld) => {
                 let mut scenes_data = Vec::new();
@@ -424,11 +424,7 @@ pub async fn preview_file(
                     };
 
                     // Build texture root based on TexDir
-                    let texture_path = dworld
-                        .tex_dirs
-                        .get(0)
-                        .map(|t| t.path.clone())
-                        .unwrap_or_else(|| "".to_string());
+                    let texture_path = String::new();
 
                     // Build scene
                     let mut scene = crate::mesh::Scene::from_xac_root(&xac_root, texture_path);

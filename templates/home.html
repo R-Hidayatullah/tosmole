@@ -968,10 +968,9 @@
                         const mp3Data = await response.blob();
                         this.renderMP3Audio(mp3Data);
                     } else if (contentType.includes('application/json') && extension === '3dworld') {
-                        //const xacDataWorld = await response.json();
-                        //this.renderXACModelWorld(xacDataWorld);
-                    }
-                    else if (contentType.includes('application/json') && extension === 'xac') {
+                        const scenesData = await response.json();
+                        this.renderXACModelWorld(scenesData);
+                    } else if (contentType.includes('application/json') && extension === 'xac') {
                         const xacData = await response.json();
                         this.renderXACModel(xacData);
                     } else if (contentType.includes('text/plain')) {
@@ -1518,8 +1517,7 @@
             };
 
 
-
-            async renderXACModelWorld(xacDataWorld) {
+            async renderXACModelWorld(scenesData) {
                 const previewContent = document.getElementById('previewContent');
 
                 // If a previous instance created resources, clean them up first
@@ -1547,16 +1545,14 @@
                     rafId: null,
                     listeners: [],
                     gl: null,
-                    vbo: null,
-                    ibo: null,
+                    models: [], // Array of {vbo, ibo, submeshInfos, position, rotation, scale}
                     vs: null,
                     fs: null,
                     program: null,
                     textures: [],
                 };
 
-
-                // Resize helper — set drawing buffer size to match displayed size (with HiDPI support)
+                // Resize helper
                 function resizeCanvas() {
                     if (!canvas) return;
                     const dpr = window.devicePixelRatio || 1;
@@ -1587,238 +1583,235 @@
 
                 cleanupItems.gl = gl;
 
-                // Initial resize (defer to next frame so layout has settled)
+                // Initial resize
                 requestAnimationFrame(resizeCanvas);
-
-                // Watch window resizes
                 addListener(window, 'resize', resizeCanvas);
-                // --- Extract mesh data ---
-                const positions = [], normals = [], indices = [], uvs = [], submeshInfos = [];
 
-                const extractNode = async (node, depth = 0) => {
-                    if (!node) return;
+                // --- Process each scene ---
+                console.log("=== Processing World Scenes ===");
+                console.log(`Total scenes: ${scenesData.length}`);
 
-                    const indent = "  ".repeat(depth);
+                let globalMinX = Infinity, globalMinY = Infinity, globalMinZ = Infinity;
+                let globalMaxX = -Infinity, globalMaxY = -Infinity, globalMaxZ = -Infinity;
 
-                    console.log(`${indent}Processing node:`, node.name ?? "(unnamed)");
+                for (let sceneIdx = 0; sceneIdx < scenesData.length; sceneIdx++) {
+                    const scene = scenesData[sceneIdx];
+                    console.log(`\n--- Scene ${sceneIdx} ---`);
+                    console.log("Position:", scene.position);
+                    console.log("Rotation:", scene.rotation);
+                    console.log("Scale:", scene.scale);
 
-                    if (node.model && node.model.submeshes) {
-                        console.log(`${indent}  Submeshes: ${node.model.submeshes.length}`);
+                    const positions = [], normals = [], indices = [], uvs = [], submeshInfos = [];
 
-                        for (const sub of node.model.submeshes) {
+                    const extractNode = async (node, depth = 0) => {
+                        if (!node) return;
 
-                            // Skip submesh if unnamed or no texture
-                            if ((!sub.name || sub.name.trim() === "" || sub.name.toLowerCase().includes("none")) &&
-                                (!sub.textures || sub.textures.trim() === "" || sub.textures.toLowerCase().includes("none"))) {
+                        const indent = "  ".repeat(depth);
+                        console.log(`${indent}Node:`, node.name ?? "(unnamed)");
 
-                                console.warn(`${indent}  ⚠ Skipping submesh (no name or texture):`, sub.name);
-                                continue;
-                            }
-
-                            console.log(`${indent}  ▶ Submesh: ${sub.name}`);
-                            console.log(`${indent}     Texture: ${sub.textures || "(none)"}`);
-
-                            // Load texture
-                            let tex = null;
-
-                            if (sub.textures) {
-                                // --- Replace .tga / .TGA → .dds ---
-                                let texPath = sub.textures.replace(/\.tga$/i, ".dds");
-
-                                try {
-                                    tex = await this.loadTextureFromServer(gl, texPath, 0);
-
-                                    if (!tex) {
-                                        console.warn(`${indent}     ⚠ Texture failed, using fallback white (${texPath})`);
-                                    } else {
-                                        console.log(`${indent}     ✔ Texture loaded (${texPath})`);
-                                    }
-                                } catch (e) {
-                                    console.error(`${indent}     ❌ Texture load error (${texPath}):`, e);
+                        if (node.model && node.model.submeshes) {
+                            for (const sub of node.model.submeshes) {
+                                if ((!sub.name || sub.name.trim() === "" || sub.name.toLowerCase().includes("none")) &&
+                                    (!sub.textures || sub.textures.trim() === "" || sub.textures.toLowerCase().includes("none"))) {
+                                    console.warn(`${indent}  ⚠ Skipping submesh (no name or texture)`);
+                                    continue;
                                 }
-                            }
 
-                            const baseIndex = positions.length / 3;
+                                console.log(`${indent}  ▶ Submesh: ${sub.name}`);
+                                console.log(`${indent}     Texture: ${sub.textures || "(none)"}`);
 
-                            // Positions / Normals / UVs
-                            if (sub.positions && sub.positions.length > 0) {
-                                console.log(`${indent}     Vertices: ${sub.positions.length}`);
-
-                                for (let i = 0; i < sub.positions.length; i++) {
-                                    const pos = sub.positions[i];
-                                    positions.push(pos.x, pos.y, pos.z);
-
-                                    if (sub.normals && sub.normals[i]) {
-                                        const n = sub.normals[i];
-                                        normals.push(n.x, n.y, n.z);
-                                    } else {
-                                        normals.push(0, 0, 1);
-                                    }
-
-                                    if (sub.uvcoords && sub.uvcoords[i]) {
-                                        uvs.push(sub.uvcoords[i].x ?? 0, 1.0 - (sub.uvcoords[i].y ?? 0));
-                                    } else {
-                                        uvs.push(0, 0);
+                                // Load texture
+                                let tex = null;
+                                if (sub.textures) {
+                                    let texPath = sub.textures.replace(/\.tga$/i, ".dds");
+                                    try {
+                                        tex = await this.loadTextureFromServer(gl, texPath, 0);
+                                        if (!tex) {
+                                            console.warn(`${indent}     ⚠ Texture failed, using fallback white`);
+                                        } else {
+                                            console.log(`${indent}     ✔ Texture loaded`);
+                                        }
+                                    } catch (e) {
+                                        console.error(`${indent}     ❌ Texture load error:`, e);
                                     }
                                 }
-                            } else {
-                                console.warn(`${indent}     ⚠ No position data, skipping`);
-                            }
 
-                            // Indices
-                            if (sub.indices && sub.indices.length > 0) {
-                                console.log(`${indent}     Indices: ${sub.indices.length}`);
-                                for (const idx of sub.indices) indices.push(baseIndex + idx);
-                            } else {
-                                const vertCount = sub.positions ? sub.positions.length : 4;
-                                console.warn(`${indent}     ⚠ No index data, auto-generating ${vertCount} sequential indices`);
-                                for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
-                            }
+                                const baseIndex = positions.length / 3;
 
-                            const indexCount = sub.indices ? sub.indices.length : (sub.positions?.length ?? 0);
-                            const indexOffset = indices.length - indexCount;
+                                // Positions / Normals / UVs
+                                if (sub.positions && sub.positions.length > 0) {
+                                    for (let i = 0; i < sub.positions.length; i++) {
+                                        const pos = sub.positions[i];
+                                        positions.push(pos.x, pos.y, pos.z);
 
-                            console.log(`${indent}     → indexOffset=${indexOffset}, indexCount=${indexCount}`);
+                                        if (sub.normals && sub.normals[i]) {
+                                            const n = sub.normals[i];
+                                            normals.push(n.x, n.y, n.z);
+                                        } else {
+                                            normals.push(0, 0, 1);
+                                        }
 
-                            submeshInfos.push({
-                                texture: tex,
-                                indexOffset,
-                                indexCount
-                            });
+                                        if (sub.uvcoords && sub.uvcoords[i]) {
+                                            uvs.push(sub.uvcoords[i].x ?? 0, 1.0 - (sub.uvcoords[i].y ?? 0));
+                                        } else {
+                                            uvs.push(0, 0);
+                                        }
+                                    }
+                                }
 
-                            // Fallback texture
-                            if (!tex) {
-                                tex = this.createFallbackTexture(gl);
-                            } else if (tex !== gl._fallbackWhiteTexture) {
-                                cleanupItems.textures.push(tex);
+                                // Indices
+                                if (sub.indices && sub.indices.length > 0) {
+                                    for (const idx of sub.indices) indices.push(baseIndex + idx);
+                                } else {
+                                    const vertCount = sub.positions ? sub.positions.length : 0;
+                                    for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
+                                }
+
+                                const indexCount = sub.indices ? sub.indices.length : (sub.positions?.length ?? 0);
+                                const indexOffset = indices.length - indexCount;
+
+                                submeshInfos.push({
+                                    texture: tex,
+                                    indexOffset,
+                                    indexCount
+                                });
+
+                                if (!tex) {
+                                    tex = this.createFallbackTexture(gl);
+                                } else if (tex !== gl._fallbackWhiteTexture) {
+                                    cleanupItems.textures.push(tex);
+                                }
                             }
                         }
-                    }
 
-                    if (node.children) {
-                        for (const child of node.children) {
-                            await extractNode(child, depth + 1);
+                        if (node.children) {
+                            for (const child of node.children) {
+                                await extractNode(child, depth + 1);
+                            }
                         }
+                    };
+
+                    // Extract all nodes
+                    if (scene.root_nodes && scene.root_nodes.length > 0) {
+                        for (const root of scene.root_nodes) await extractNode(root);
                     }
-                };
 
-                // Start extracting
-                if (xacDataWorld.root_nodes && xacDataWorld.root_nodes.length > 0) {
-                    console.log("=== Begin XAC Mesh Extraction ===");
-                    for (const root of xacDataWorld.root_nodes) await extractNode(root);
-                    console.log("=== Mesh Extraction Complete ===");
-                } else {
-                    console.warn("⚠ No root_nodes found. Using fallback quad.");
-                    positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
-                    normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
-                    uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
-                    indices.push(0, 1, 2, 2, 3, 0);
+                    if (positions.length === 0) {
+                        console.warn(`Scene ${sceneIdx} has no geometry, skipping.`);
+                        continue;
+                    }
+
+                    // Compute bounding box for this model
+                    let minX = Infinity, minY = Infinity, minZ = Infinity;
+                    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+                    for (let i = 0; i < positions.length; i += 3) {
+                        const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+                        minX = Math.min(minX, x);
+                        minY = Math.min(minY, y);
+                        minZ = Math.min(minZ, z);
+                        maxX = Math.max(maxX, x);
+                        maxY = Math.max(maxY, y);
+                        maxZ = Math.max(maxZ, z);
+                    }
+
+                    // Apply scene transform to bounding box
+                    const scenePos = scene.position || { x: 0, y: 0, z: 0 };
+                    const corners = [
+                        [minX, minY, minZ], [maxX, minY, minZ],
+                        [minX, maxY, minZ], [maxX, maxY, minZ],
+                        [minX, minY, maxZ], [maxX, minY, maxZ],
+                        [minX, maxY, maxZ], [maxX, maxY, maxZ]
+                    ];
+
+                    for (const corner of corners) {
+                        const wx = corner[0] + scenePos.x;
+                        const wy = corner[1] + scenePos.y;
+                        const wz = corner[2] + scenePos.z;
+                        globalMinX = Math.min(globalMinX, wx);
+                        globalMinY = Math.min(globalMinY, wy);
+                        globalMinZ = Math.min(globalMinZ, wz);
+                        globalMaxX = Math.max(globalMaxX, wx);
+                        globalMaxY = Math.max(globalMaxY, wy);
+                        globalMaxZ = Math.max(globalMaxZ, wz);
+                    }
+
+                    // Interleave vertex data
+                    const vertexCount = positions.length / 3;
+                    const vertexData = new Float32Array(vertexCount * 8);
+
+                    for (let i = 0; i < vertexCount; i++) {
+                        vertexData[i * 8 + 0] = positions[i * 3 + 0];
+                        vertexData[i * 8 + 1] = positions[i * 3 + 1];
+                        vertexData[i * 8 + 2] = positions[i * 3 + 2];
+                        vertexData[i * 8 + 3] = normals[i * 3 + 0];
+                        vertexData[i * 8 + 4] = normals[i * 3 + 1];
+                        vertexData[i * 8 + 5] = normals[i * 3 + 2];
+                        vertexData[i * 8 + 6] = uvs[i * 2 + 0] ?? 0;
+                        vertexData[i * 8 + 7] = uvs[i * 2 + 1] ?? 0;
+                    }
+
+                    // Create buffers
+                    const needUint32 = (vertexCount > 65535);
+                    const idxExt = gl.getExtension('OES_element_index_uint');
+
+                    let indexArray;
+                    let indexType;
+
+                    if (needUint32) {
+                        if (idxExt) {
+                            indexArray = new Uint32Array(indices);
+                            indexType = gl.UNSIGNED_INT;
+                        } else {
+                            console.warn("⚠ Truncating indices to 65535");
+                            indexArray = new Uint16Array(indices.slice(0, 65535));
+                            indexType = gl.UNSIGNED_SHORT;
+                        }
+                    } else {
+                        indexArray = new Uint16Array(indices);
+                        indexType = gl.UNSIGNED_SHORT;
+                    }
+
+                    const vbo = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                    gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+
+                    const ibo = gl.createBuffer();
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+                    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
+
+                    // Store model data
+                    cleanupItems.models.push({
+                        vbo,
+                        ibo,
+                        submeshInfos,
+                        indexType,
+                        position: scene.position || { x: 0, y: 0, z: 0 },
+                        rotation: scene.rotation || { x: 0, y: 0, z: 0, w: 1 },
+                        scale: scene.scale || { x: 1, y: 1, z: 1 }
+                    });
+
+                    console.log(`Scene ${sceneIdx} processed: ${vertexCount} vertices, ${indices.length} indices`);
                 }
 
-                // --- Bounding box & view setup ---
-                console.log("=== Compute Bounding Box ===");
+                console.log("\n=== Global Bounding Box ===");
+                console.log("  min:", globalMinX, globalMinY, globalMinZ);
+                console.log("  max:", globalMaxX, globalMaxY, globalMaxZ);
 
-                let minX = Infinity, minY = Infinity, minZ = Infinity;
-                let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+                const centerX = (globalMinX + globalMaxX) / 2;
+                const centerY = (globalMinY + globalMaxY) / 2;
+                const centerZ = (globalMinZ + globalMaxZ) / 2;
 
-                for (let i = 0; i < positions.length; i += 3) {
-                    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
-                    minX = Math.min(minX, x);
-                    minY = Math.min(minY, y);
-                    minZ = Math.min(minZ, z);
-                    maxX = Math.max(maxX, x);
-                    maxY = Math.max(maxY, y);
-                    maxZ = Math.max(maxZ, z);
-                }
-
-                console.log("Bounding Box:");
-                console.log("  min:", minX, minY, minZ);
-                console.log("  max:", maxX, maxY, maxZ);
-
-                const centerX = (minX + maxX) / 2;
-                const centerY = (minY + maxY) / 2;
-                const centerZ = (minZ + maxZ) / 2;
-
-                const sizeX = maxX - minX;
-                const sizeY = maxY - minY;
-                const sizeZ = maxZ - minZ;
+                const sizeX = globalMaxX - globalMinX;
+                const sizeY = globalMaxY - globalMinY;
+                const sizeZ = globalMaxZ - globalMinZ;
 
                 const maxSize = Math.max(sizeX, sizeY, sizeZ) || 1;
                 let distance = maxSize * 1.5;
 
                 console.log(`  maxSize=${maxSize}, cameraDistance=${distance}`);
 
-
-                // --- Interleave vertex data ---
-                const vertexCount = positions.length / 3;
-                console.log("=== Interleave Vertex Data ===");
-                console.log(`Vertex Count: ${vertexCount}`);
-
-                if (uvs.length / 2 !== vertexCount) {
-                    console.warn(
-                        `⚠ UV count mismatch! UVs=${uvs.length / 2}, Vertices=${vertexCount}. `
-                        + `Missing UVs may cause gray texture.`
-                    );
-                    console.log("Sample UVs:", uvs.slice(0, 10));
-                }
-
-                const vertexData = new Float32Array(vertexCount * 8);
-
-                for (let i = 0; i < vertexCount; i++) {
-                    vertexData[i * 8 + 0] = positions[i * 3 + 0];
-                    vertexData[i * 8 + 1] = positions[i * 3 + 1];
-                    vertexData[i * 8 + 2] = positions[i * 3 + 2];
-
-                    vertexData[i * 8 + 3] = normals[i * 3 + 0];
-                    vertexData[i * 8 + 4] = normals[i * 3 + 1];
-                    vertexData[i * 8 + 5] = normals[i * 3 + 2];
-
-                    const u = uvs[i * 2 + 0] ?? 0;
-                    const v = uvs[i * 2 + 1] ?? 0;
-
-                    vertexData[i * 8 + 6] = u;
-                    vertexData[i * 8 + 7] = v;
-                }
-
-                console.log("Interleaved vertexData created. Total floats:", vertexData.length);
-
-
-                // --- Index Array Setup ---
-                console.log("=== Index Buffer Setup ===");
-                console.log(`Index Count: ${indices.length}`);
-
-                const needUint32 = (vertexCount > 65535);
-                const idxExt = gl.getExtension('OES_element_index_uint');
-
-                let indexArray;
-                let indexType;
-
-                if (needUint32) {
-                    if (idxExt) {
-                        console.log("Using Uint32 indices (extension available).");
-                        indexArray = new Uint32Array(indices);
-                        indexType = gl.UNSIGNED_INT;
-                    } else {
-                        console.warn(
-                            "⚠ Mesh requires >65535 vertices but OES_element_index_uint is missing.\n" +
-                            "Truncating indices to 65535 — geometry may be broken!"
-                        );
-
-                        indices = indices.slice(0, 65535);
-                        indexArray = new Uint16Array(indices);
-                        indexType = gl.UNSIGNED_SHORT;
-                    }
-                } else {
-                    console.log("Using Uint16 indices (fits).");
-                    indexArray = new Uint16Array(indices);
-                    indexType = gl.UNSIGNED_SHORT;
-                }
-
-                console.log(`IndexType = ${indexType === gl.UNSIGNED_INT ? "UNSIGNED_INT" : "UNSIGNED_SHORT"}`);
-                console.log("IndexArray length:", indexArray.length);
-
-
-                // --- Shaders (same sources) ---
+                // --- Shaders ---
                 const vsSource = `
 attribute vec3 aPosition;
 attribute vec3 aNormal;
@@ -1827,105 +1820,80 @@ varying vec2 vTexCoord;
 varying vec3 vNormal;
 
 uniform mat4 uMVP;
+uniform mat4 uModel;
 
 void main() {
     gl_Position = uMVP * vec4(aPosition,1.0);
     vTexCoord = aTexCoord;
-    vNormal = aNormal;
+    vNormal = (uModel * vec4(aNormal, 0.0)).xyz;
 }
 `;
 
                 const fsSource = `
-                precision mediump float;
-                varying vec2 vTexCoord;
-                varying vec3 vNormal;
-                uniform sampler2D uTexture;
+precision mediump float;
+varying vec2 vTexCoord;
+varying vec3 vNormal;
+uniform sampler2D uTexture;
 
-                void main() {
-                    vec3 texColor = texture2D(uTexture, vTexCoord).rgb;
+void main() {
+    vec4 texColor = texture2D(uTexture, vTexCoord);
 
-                    vec3 normal = normalize(vNormal);
+    vec3 normal = normalize(vNormal);
 
-                    // Six directional lights (+X, -X, +Y, -Y, +Z, -Z)
-                    vec3 lightDirs[6];
-                    lightDirs[0] = vec3( 1.0,  0.0,  0.0);
-                    lightDirs[1] = vec3(-1.0,  0.0,  0.0);
-                    lightDirs[2] = vec3( 0.0,  1.0,  0.0);
-                    lightDirs[3] = vec3( 0.0, -1.0,  0.0);
-                    lightDirs[4] = vec3( 0.0,  0.0,  1.0);
-                    lightDirs[5] = vec3( 0.0,  0.0, -1.0);
+    vec3 lightDirs[6];
+    lightDirs[0] = vec3( 1.0,  0.0,  0.0);
+    lightDirs[1] = vec3(-1.0,  0.0,  0.0);
+    lightDirs[2] = vec3( 0.0,  1.0,  0.0);
+    lightDirs[3] = vec3( 0.0, -1.0,  0.0);
+    lightDirs[4] = vec3( 0.0,  0.0,  1.0);
+    lightDirs[5] = vec3( 0.0,  0.0, -1.0);
 
-                    float diff = 0.0;
-                    for (int i = 0; i < 6; i++) {
-                        diff += max(dot(normal, lightDirs[i]), 0.0);
-                    }
-                    diff /= 4.0; // average contribution
+    float diff = 0.0;
+    for (int i = 0; i < 6; i++) {
+        diff += max(dot(normal, lightDirs[i]), 0.0);
+    }
+    diff /= 4.0;
 
-                    vec3 ambient = texColor * 0.2; // ambient term
-                    vec3 color = texColor * diff + ambient;
+    vec3 ambient = texColor.rgb * 0.2;
+    vec3 color = texColor.rgb * diff + ambient;
 
-                    gl_FragColor = vec4(color, 1.0);
-                }
-
-                `;
-
+    gl_FragColor = vec4(color, texColor.a);
+}
+`;
 
                 function compileShader(src, type) {
                     const s = gl.createShader(type);
                     gl.shaderSource(s, src);
                     gl.compileShader(s);
                     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-                        const log = gl.getShaderInfoLog(s);
-                        console.error('Shader compile error:', log);
+                        console.error('Shader compile error:', gl.getShaderInfoLog(s));
                     }
                     return s;
                 }
 
-                // Create program and buffers
                 const vs = compileShader(vsSource, gl.VERTEX_SHADER);
                 const fs = compileShader(fsSource, gl.FRAGMENT_SHADER);
                 const program = gl.createProgram();
-                if (vs) gl.attachShader(program, vs);
-                if (fs) gl.attachShader(program, fs);
+                gl.attachShader(program, vs);
+                gl.attachShader(program, fs);
                 gl.linkProgram(program);
                 if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
                     console.error('Program link error:', gl.getProgramInfoLog(program));
                 }
                 gl.useProgram(program);
 
-                const vbo = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-                gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+                cleanupItems.vs = vs;
+                cleanupItems.fs = fs;
+                cleanupItems.program = program;
 
-                const ibo = gl.createBuffer();
-                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
-
-                // Attribute setup
-                const aPos = gl.getAttribLocation(program, 'aPosition');
-                const aNormal = gl.getAttribLocation(program, 'aNormal');
-                const aTex = gl.getAttribLocation(program, 'aTexCoord');
-                gl.enableVertexAttribArray(aPos);
-                gl.enableVertexAttribArray(aNormal);
-                gl.enableVertexAttribArray(aTex);
-
-                const stride = 8 * 4; // 8 floats: pos+normal+uv
-                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
-                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
-                gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, stride, 24);
-
-                if (aPos < 0) console.warn('aPosition attribute not found');
-                if (aNormal < 0) console.warn('aNormal attribute not found');
-                if (aTex < 0) console.warn('aTexCoord attribute not found');
-
-                // UV sanity
-                console.log('UV count:', uvs.length / 2);
-
-
+                // Uniforms
                 const uTexture = gl.getUniformLocation(program, 'uTexture');
                 const uMVP = gl.getUniformLocation(program, 'uMVP');
+                const uModel = gl.getUniformLocation(program, 'uModel');
 
-                // helper matrices (unchanged)
+                gl.uniform1i(uTexture, 0);
+
+                // Matrix helpers
                 function identity() { return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
                 function perspective(fov, aspect, near, far) {
                     const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
@@ -1942,25 +1910,37 @@ void main() {
                         o[j * 4 + i] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
                     return o;
                 }
-                function translate(m, x, y, z) { const t = identity(); t[12] = -x; t[13] = -y; t[14] = -z - distance; return multiply(m, t); }
+                function translate(m, x, y, z) { const t = identity(); t[12] = x; t[13] = y; t[14] = z; return multiply(m, t); }
+                function translateView(m, x, y, z) { const t = identity(); t[12] = -x; t[13] = -y; t[14] = -z - distance; return multiply(m, t); }
                 function rotateX(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[5] = c; r[6] = s; r[9] = -s; r[10] = c; return multiply(m, r); }
                 function rotateY(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[0] = c; r[2] = s; r[8] = -s; r[10] = c; return multiply(m, r); }
+                function scale(m, x, y, z) { const s = identity(); s[0] = x; s[5] = y; s[10] = z; return multiply(m, s); }
+                function quatToMatrix(q) {
+                    const x = q.x, y = q.y, z = q.z, w = q.w;
+                    const m = identity();
+                    m[0] = 1 - 2 * (y * y + z * z);
+                    m[1] = 2 * (x * y + z * w);
+                    m[2] = 2 * (x * z - y * w);
+                    m[4] = 2 * (x * y - z * w);
+                    m[5] = 1 - 2 * (x * x + z * z);
+                    m[6] = 2 * (y * z + x * w);
+                    m[8] = 2 * (x * z + y * w);
+                    m[9] = 2 * (y * z - x * w);
+                    m[10] = 1 - 2 * (x * x + y * y);
+                    return m;
+                }
 
                 let rotX = 0, rotY = 0;
                 let mouseDown = false, lastX = 0, lastY = 0;
 
-                // Single set of pointer handlers (no duplicates)
                 addListener(canvas, 'mousedown', e => { mouseDown = true; lastX = e.clientX; lastY = e.clientY; });
                 addListener(window, 'mouseup', () => { mouseDown = false; });
                 addListener(canvas, 'mousemove', e => {
                     if (mouseDown) {
                         rotY -= (e.clientX - lastX) * 0.01;
-                        // Update rotX with clamping (same clamp as earlier)
                         rotX += (e.clientY - lastY) * 0.01;
                         const maxRot = Math.PI / 2 - 0.01;
-                        if (rotX > maxRot) rotX = maxRot;
-                        if (rotX < -maxRot) rotX = -maxRot;
-
+                        rotX = Math.max(-maxRot, Math.min(maxRot, rotX));
                         lastX = e.clientX;
                         lastY = e.clientY;
                     }
@@ -1969,32 +1949,12 @@ void main() {
                 addListener(canvas, 'wheel', e => {
                     e.preventDefault();
                     const zoomSpeed = 1.02;
-                    if (e.deltaY < 0) {
-                        distance /= zoomSpeed;
-                    } else {
-                        distance *= zoomSpeed;
-                    }
+                    distance *= (e.deltaY < 0) ? (1 / zoomSpeed) : zoomSpeed;
                     distance = Math.max(maxSize * 0.5, Math.min(maxSize * 10, distance));
                 }, { passive: false });
 
-                // store GL resources for cleanup
-                cleanupItems.vbo = vbo;
-                cleanupItems.ibo = ibo;
-                cleanupItems.vs = vs;
-                cleanupItems.fs = fs;
-                cleanupItems.program = program;
-
-                // Helper for index byte size (define once)
                 function bytesPerIndex(type) {
                     return (type === gl.UNSIGNED_INT) ? 4 : 2;
-                }
-
-                // Ensure program is active and sampler set once
-                gl.useProgram(program);
-                if (uTexture !== -1 && uTexture !== null) {
-                    gl.uniform1i(uTexture, 0); // sampler uses texture unit 0
-                } else {
-                    console.warn('uTexture uniform location appears invalid:', uTexture);
                 }
 
                 function renderLoop() {
@@ -2004,38 +1964,53 @@ void main() {
                     gl.enable(gl.DEPTH_TEST);
 
                     const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.01, 30000);
-                    let view = translate(identity(), centerX, centerY, centerZ);
+                    let view = translateView(identity(), centerX, centerY, centerZ);
                     view = rotateX(view, rotX);
                     view = rotateY(view, rotY);
-                    const mvp = multiply(proj, view);
 
-                    // upload MVP once
-                    gl.uniformMatrix4fv(uMVP, false, mvp);
+                    // Render each model
+                    for (const model of cleanupItems.models) {
+                        // Build model matrix: Translate -> Rotate -> Scale
+                        let modelMat = identity();
+                        modelMat = translate(modelMat, model.position.x, model.position.y, model.position.z);
+                        modelMat = multiply(modelMat, quatToMatrix(model.rotation));
+                        modelMat = scale(modelMat, model.scale.x, model.scale.y, model.scale.z);
 
-                    // bind element array once
-                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+                        const mvp = multiply(proj, multiply(view, modelMat));
 
-                    // precompute index byte size for chosen indexType
-                    const indexByteSize = bytesPerIndex(indexType);
+                        gl.uniformMatrix4fv(uMVP, false, mvp);
+                        gl.uniformMatrix4fv(uModel, false, modelMat);
 
-                    for (const sub of submeshInfos) {
-                        if (!sub || sub.indexCount <= 0) continue;
+                        // Bind this model's buffers
+                        gl.bindBuffer(gl.ARRAY_BUFFER, model.vbo);
+                        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, model.ibo);
 
-                        // bind texture (or fallback) to texture unit 0
-                        const texToBind = sub.texture || gl._fallbackWhiteTexture;
-                        gl.activeTexture(gl.TEXTURE0);
-                        gl.bindTexture(gl.TEXTURE_2D, texToBind);
-                        // sampler already set to unit 0 above; if you prefer to be explicit per-submesh you can uncomment:
-                        // gl.uniform1i(uTexture, 0);
+                        const aPos = gl.getAttribLocation(program, 'aPosition');
+                        const aNormal = gl.getAttribLocation(program, 'aNormal');
+                        const aTex = gl.getAttribLocation(program, 'aTexCoord');
 
-                        // compute byte offset for drawElements (must be in BYTES)
-                        const offsetBytes = sub.indexOffset * indexByteSize;
+                        gl.enableVertexAttribArray(aPos);
+                        gl.enableVertexAttribArray(aNormal);
+                        gl.enableVertexAttribArray(aTex);
 
-                        // Optional diagnostic (uncomment to debug)
-                        // console.log('Drawing submesh', { indexCount: sub.indexCount, indexOffset: sub.indexOffset, offsetBytes });
+                        const stride = 8 * 4;
+                        gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
+                        gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
+                        gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, stride, 24);
 
-                        // draw
-                        gl.drawElements(gl.TRIANGLES, sub.indexCount, indexType, offsetBytes);
+                        const indexByteSize = bytesPerIndex(model.indexType);
+
+                        // Draw each submesh
+                        for (const sub of model.submeshInfos) {
+                            if (!sub || sub.indexCount <= 0) continue;
+
+                            const texToBind = sub.texture || gl._fallbackWhiteTexture;
+                            gl.activeTexture(gl.TEXTURE0);
+                            gl.bindTexture(gl.TEXTURE_2D, texToBind);
+
+                            const offsetBytes = sub.indexOffset * indexByteSize;
+                            gl.drawElements(gl.TRIANGLES, sub.indexCount, model.indexType, offsetBytes);
+                        }
                     }
 
                     cleanupItems.rafId = requestAnimationFrame(renderLoop);
@@ -2043,20 +2018,17 @@ void main() {
 
                 renderLoop();
 
-                // Provide a cleanup function so future calls can dispose of resources
+                // Cleanup function
                 previewContent._xacCleanup = () => {
-                    // Cancel RAF
                     if (cleanupItems.rafId != null) {
-                        try { cancelAnimationFrame(cleanupItems.rafId); } catch (e) { }
+                        cancelAnimationFrame(cleanupItems.rafId);
                         cleanupItems.rafId = null;
                     }
-                    // Remove listeners
                     for (const L of cleanupItems.listeners) {
                         try { L.target.removeEventListener(L.type, L.fn, L.opts); } catch (e) { }
                     }
                     cleanupItems.listeners.length = 0;
 
-                    // Delete GL resources (if context still available)
                     try {
                         const g = cleanupItems.gl;
                         if (g) {
@@ -2065,13 +2037,18 @@ void main() {
                                 try { g.deleteTexture(t); } catch (e) { }
                             }
                             cleanupItems.textures = [];
-                            if (cleanupItems.vbo) { g.deleteBuffer(cleanupItems.vbo); cleanupItems.vbo = null; }
-                            if (cleanupItems.ibo) { g.deleteBuffer(cleanupItems.ibo); cleanupItems.ibo = null; }
+
+                            for (const model of cleanupItems.models) {
+                                if (model.vbo) g.deleteBuffer(model.vbo);
+                                if (model.ibo) g.deleteBuffer(model.ibo);
+                            }
+                            cleanupItems.models = [];
+
                             if (cleanupItems.program) {
                                 try {
-                                    if (cleanupItems.vs) { g.detachShader(cleanupItems.program, cleanupItems.vs); g.deleteShader(cleanupItems.vs); cleanupItems.vs = null; }
-                                    if (cleanupItems.fs) { g.detachShader(cleanupItems.program, cleanupItems.fs); g.deleteShader(cleanupItems.fs); cleanupItems.fs = null; }
-                                } catch (e) { /* some browsers throw when detaching */ }
+                                    if (cleanupItems.vs) { g.detachShader(cleanupItems.program, cleanupItems.vs); g.deleteShader(cleanupItems.vs); }
+                                    if (cleanupItems.fs) { g.detachShader(cleanupItems.program, cleanupItems.fs); g.deleteShader(cleanupItems.fs); }
+                                } catch (e) { }
                                 try { g.deleteProgram(cleanupItems.program); } catch (e) { }
                                 cleanupItems.program = null;
                             }
@@ -2079,19 +2056,14 @@ void main() {
                     } catch (e) {
                         console.warn('GL cleanup error', e);
                     }
-
-                    // Clear canvas and remove DOM nodes if desired (kept minimal)
-                    // previewContent.innerHTML = ''; // if you want to fully remove canvas output
                 };
 
-                // (Optional) Also cleanup when the canvas context is lost
                 function onContextLost(ev) {
                     ev.preventDefault();
                     if (previewContent._xacCleanup) previewContent._xacCleanup();
                 }
                 addListener(canvas, 'webglcontextlost', onContextLost);
             }
-
 
 
             async renderXACModel(xacData) {

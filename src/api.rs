@@ -461,32 +461,7 @@ pub async fn preview_file(
                 // Try to get texture path
                 let texture_path = match mesh_map.get(&full_path_lc) {
                     Some(path) => path.clone(),
-                    None => {
-                        // Fallback: replace char_hi with char_texture
-                        let fallback = {
-                            // Replace char_hi -> char_texture
-                            let mut path = _full_path.replace("char_hi", "char_texture");
-
-                            // Remove filename, keep folder path only
-                            path = match path.rfind('/') {
-                                Some(idx) => path[..idx].to_string(),
-                                None => path,
-                            };
-
-                            // Ensure it ends with '/'
-                            if !path.ends_with('/') {
-                                path.push('/');
-                            }
-
-                            path
-                        };
-
-                        println!(
-                            "No texture path found for {} — using fallback folder {}",
-                            _full_path, fallback
-                        );
-                        fallback
-                    }
+                    None => String::new(),
                 };
 
                 let scene = crate::mesh::Scene::from_xac_root(&xac_root, texture_path);

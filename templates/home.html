@@ -1173,6 +1173,44 @@
                 return tex;
             }
 
+            normalizeTextureName(texPath) {
+                if (!texPath) return null;
+
+                // change extension .tga/.png/.bmp → .dds
+                const name = texPath.replace(/\.(tga|png|bmp|jpg|jpeg|dds)$/i, ".dds");
+
+                return name.toLowerCase();
+            }
+
+            async findTexturePath(texPath) {
+                const fileName = this.normalizeTextureName(texPath);
+                if (!fileName) return null;
+
+                const url = `/api/file/search?file_name=${encodeURIComponent(fileName)}`;
+                console.log("[Search] GET", url);
+
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    console.warn("[Search] Failed:", resp.status);
+                    return null;
+                }
+
+                const data = await resp.json();
+                if (!data.found_files || data.found_files.length === 0) {
+                    console.warn("[Search] No matches for", fileName);
+                    return null;
+                }
+
+                // Always take result index 0
+                const entry = data.found_files[0];
+
+                return {
+                    path: entry.file_path,
+                    version: entry.version
+                };
+            }
+
+
             // Load texture from server — detect image vs DDS with detailed logging
             loadTextureFromServer = async (gl, path, version = 0) => {
 
@@ -1181,7 +1219,17 @@
                 console.log(`[Input] path = ${path}`);
                 console.log(`[Input] version = ${version}`);
 
-                const url = `/api/file/download?path=${encodeURIComponent(path)}&version=${version}`;
+                // 🔥 FIX: await the async search
+                const textureData = await this.findTexturePath(path);
+
+                if (!textureData) {
+                    console.warn("[TextureLoader] Texture not found on server:", path);
+                    return null;
+                }
+
+                console.log("[TextureLoader] Resolved:", textureData);
+
+                const url = `/api/file/download?path=${encodeURIComponent(textureData.path)}&version=${textureData.version}`;
                 console.log(`[URL] Fetching: ${url}`);
 
                 try {
@@ -1464,6 +1512,581 @@
                 const fallback = this.createFallbackTexture(gl);
                 return fallback;
             };
+
+
+
+            async renderXACModelWorld(xacDataWorld) {
+                const previewContent = document.getElementById('previewContent');
+
+                // If a previous instance created resources, clean them up first
+                if (previewContent._xacCleanup) {
+                    try { previewContent._xacCleanup(); } catch (e) { console.warn('cleanup failed', e); }
+                    previewContent._xacCleanup = null;
+                }
+
+                previewContent.classList.add("preview-xac");
+
+                // Insert canvas in a stat-card container with scoped inline styles
+                previewContent.innerHTML = `
+        <div class="stat-card" 
+             style="display:flex; justify-content:center; align-items:center; width:100%; height:70vh;">
+            <canvas id="glCanvas" class="rounded shadow" 
+                    style="background:#111; display:block; width:100%; height:100%;">
+            </canvas>
+        </div>
+    `;
+
+                let canvas = document.getElementById('glCanvas');
+
+                // Keep references for cleanup
+                const cleanupItems = {
+                    rafId: null,
+                    listeners: [],
+                    gl: null,
+                    vbo: null,
+                    ibo: null,
+                    vs: null,
+                    fs: null,
+                    program: null,
+                    textures: [],
+                };
+
+
+                // Resize helper — set drawing buffer size to match displayed size (with HiDPI support)
+                function resizeCanvas() {
+                    if (!canvas) return;
+                    const dpr = window.devicePixelRatio || 1;
+                    const rect = canvas.getBoundingClientRect();
+
+                    const w = Math.max(1, Math.floor(rect.width * dpr));
+                    const h = Math.max(1, Math.floor(rect.height * dpr));
+
+                    if (canvas.width !== w || canvas.height !== h) {
+                        canvas.width = w;
+                        canvas.height = h;
+                        if (cleanupItems.gl) cleanupItems.gl.viewport(0, 0, w, h);
+                    }
+                }
+
+                // Attach a listener and remember it for cleanup
+                function addListener(target, type, fn, opts) {
+                    target.addEventListener(type, fn, opts);
+                    cleanupItems.listeners.push({ target, type, fn, opts });
+                }
+
+                // --- GL context ---
+                const gl = canvas.getContext('webgl', { preserveDrawingBuffer: false });
+                if (!gl) {
+                    console.error('WebGL not supported');
+                    return;
+                }
+
+                cleanupItems.gl = gl;
+
+                // Initial resize (defer to next frame so layout has settled)
+                requestAnimationFrame(resizeCanvas);
+
+                // Watch window resizes
+                addListener(window, 'resize', resizeCanvas);
+                // --- Extract mesh data ---
+                const positions = [], normals = [], indices = [], uvs = [], submeshInfos = [];
+
+                const extractNode = async (node, depth = 0) => {
+                    if (!node) return;
+
+                    const indent = "  ".repeat(depth);
+
+                    console.log(`${indent}Processing node:`, node.name ?? "(unnamed)");
+
+                    if (node.model && node.model.submeshes) {
+                        console.log(`${indent}  Submeshes: ${node.model.submeshes.length}`);
+
+                        for (const sub of node.model.submeshes) {
+
+                            // Skip submesh if unnamed or no texture
+                            if ((!sub.name || sub.name.trim() === "" || sub.name.toLowerCase().includes("none")) &&
+                                (!sub.textures || sub.textures.trim() === "" || sub.textures.toLowerCase().includes("none"))) {
+
+                                console.warn(`${indent}  ⚠ Skipping submesh (no name or texture):`, sub.name);
+                                continue;
+                            }
+
+                            console.log(`${indent}  ▶ Submesh: ${sub.name}`);
+                            console.log(`${indent}     Texture: ${sub.textures || "(none)"}`);
+
+                            // Load texture
+                            let tex = null;
+
+                            if (sub.textures) {
+                                // --- Replace .tga / .TGA → .dds ---
+                                let texPath = sub.textures.replace(/\.tga$/i, ".dds");
+
+                                try {
+                                    tex = await this.loadTextureFromServer(gl, texPath, 0);
+
+                                    if (!tex) {
+                                        console.warn(`${indent}     ⚠ Texture failed, using fallback white (${texPath})`);
+                                    } else {
+                                        console.log(`${indent}     ✔ Texture loaded (${texPath})`);
+                                    }
+                                } catch (e) {
+                                    console.error(`${indent}     ❌ Texture load error (${texPath}):`, e);
+                                }
+                            }
+
+                            const baseIndex = positions.length / 3;
+
+                            // Positions / Normals / UVs
+                            if (sub.positions && sub.positions.length > 0) {
+                                console.log(`${indent}     Vertices: ${sub.positions.length}`);
+
+                                for (let i = 0; i < sub.positions.length; i++) {
+                                    const pos = sub.positions[i];
+                                    positions.push(pos.x, pos.y, pos.z);
+
+                                    if (sub.normals && sub.normals[i]) {
+                                        const n = sub.normals[i];
+                                        normals.push(n.x, n.y, n.z);
+                                    } else {
+                                        normals.push(0, 0, 1);
+                                    }
+
+                                    if (sub.uvcoords && sub.uvcoords[i]) {
+                                        uvs.push(sub.uvcoords[i].x ?? 0, 1.0 - (sub.uvcoords[i].y ?? 0));
+                                    } else {
+                                        uvs.push(0, 0);
+                                    }
+                                }
+                            } else {
+                                console.warn(`${indent}     ⚠ No position data, skipping`);
+                            }
+
+                            // Indices
+                            if (sub.indices && sub.indices.length > 0) {
+                                console.log(`${indent}     Indices: ${sub.indices.length}`);
+                                for (const idx of sub.indices) indices.push(baseIndex + idx);
+                            } else {
+                                const vertCount = sub.positions ? sub.positions.length : 4;
+                                console.warn(`${indent}     ⚠ No index data, auto-generating ${vertCount} sequential indices`);
+                                for (let i = 0; i < vertCount; i++) indices.push(baseIndex + i);
+                            }
+
+                            const indexCount = sub.indices ? sub.indices.length : (sub.positions?.length ?? 0);
+                            const indexOffset = indices.length - indexCount;
+
+                            console.log(`${indent}     → indexOffset=${indexOffset}, indexCount=${indexCount}`);
+
+                            submeshInfos.push({
+                                texture: tex,
+                                indexOffset,
+                                indexCount
+                            });
+
+                            // Fallback texture
+                            if (!tex) {
+                                tex = this.createFallbackTexture(gl);
+                            } else if (tex !== gl._fallbackWhiteTexture) {
+                                cleanupItems.textures.push(tex);
+                            }
+                        }
+                    }
+
+                    if (node.children) {
+                        for (const child of node.children) {
+                            await extractNode(child, depth + 1);
+                        }
+                    }
+                };
+
+                // Start extracting
+                if (xacDataWorld.root_nodes && xacDataWorld.root_nodes.length > 0) {
+                    console.log("=== Begin XAC Mesh Extraction ===");
+                    for (const root of xacDataWorld.root_nodes) await extractNode(root);
+                    console.log("=== Mesh Extraction Complete ===");
+                } else {
+                    console.warn("⚠ No root_nodes found. Using fallback quad.");
+                    positions.push(-1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1);
+                    normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
+                    uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
+                    indices.push(0, 1, 2, 2, 3, 0);
+                }
+
+                // --- Bounding box & view setup ---
+                console.log("=== Compute Bounding Box ===");
+
+                let minX = Infinity, minY = Infinity, minZ = Infinity;
+                let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+                for (let i = 0; i < positions.length; i += 3) {
+                    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    minZ = Math.min(minZ, z);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                    maxZ = Math.max(maxZ, z);
+                }
+
+                console.log("Bounding Box:");
+                console.log("  min:", minX, minY, minZ);
+                console.log("  max:", maxX, maxY, maxZ);
+
+                const centerX = (minX + maxX) / 2;
+                const centerY = (minY + maxY) / 2;
+                const centerZ = (minZ + maxZ) / 2;
+
+                const sizeX = maxX - minX;
+                const sizeY = maxY - minY;
+                const sizeZ = maxZ - minZ;
+
+                const maxSize = Math.max(sizeX, sizeY, sizeZ) || 1;
+                let distance = maxSize * 1.5;
+
+                console.log(`  maxSize=${maxSize}, cameraDistance=${distance}`);
+
+
+                // --- Interleave vertex data ---
+                const vertexCount = positions.length / 3;
+                console.log("=== Interleave Vertex Data ===");
+                console.log(`Vertex Count: ${vertexCount}`);
+
+                if (uvs.length / 2 !== vertexCount) {
+                    console.warn(
+                        `⚠ UV count mismatch! UVs=${uvs.length / 2}, Vertices=${vertexCount}. `
+                        + `Missing UVs may cause gray texture.`
+                    );
+                    console.log("Sample UVs:", uvs.slice(0, 10));
+                }
+
+                const vertexData = new Float32Array(vertexCount * 8);
+
+                for (let i = 0; i < vertexCount; i++) {
+                    vertexData[i * 8 + 0] = positions[i * 3 + 0];
+                    vertexData[i * 8 + 1] = positions[i * 3 + 1];
+                    vertexData[i * 8 + 2] = positions[i * 3 + 2];
+
+                    vertexData[i * 8 + 3] = normals[i * 3 + 0];
+                    vertexData[i * 8 + 4] = normals[i * 3 + 1];
+                    vertexData[i * 8 + 5] = normals[i * 3 + 2];
+
+                    const u = uvs[i * 2 + 0] ?? 0;
+                    const v = uvs[i * 2 + 1] ?? 0;
+
+                    vertexData[i * 8 + 6] = u;
+                    vertexData[i * 8 + 7] = v;
+                }
+
+                console.log("Interleaved vertexData created. Total floats:", vertexData.length);
+
+
+                // --- Index Array Setup ---
+                console.log("=== Index Buffer Setup ===");
+                console.log(`Index Count: ${indices.length}`);
+
+                const needUint32 = (vertexCount > 65535);
+                const idxExt = gl.getExtension('OES_element_index_uint');
+
+                let indexArray;
+                let indexType;
+
+                if (needUint32) {
+                    if (idxExt) {
+                        console.log("Using Uint32 indices (extension available).");
+                        indexArray = new Uint32Array(indices);
+                        indexType = gl.UNSIGNED_INT;
+                    } else {
+                        console.warn(
+                            "⚠ Mesh requires >65535 vertices but OES_element_index_uint is missing.\n" +
+                            "Truncating indices to 65535 — geometry may be broken!"
+                        );
+
+                        indices = indices.slice(0, 65535);
+                        indexArray = new Uint16Array(indices);
+                        indexType = gl.UNSIGNED_SHORT;
+                    }
+                } else {
+                    console.log("Using Uint16 indices (fits).");
+                    indexArray = new Uint16Array(indices);
+                    indexType = gl.UNSIGNED_SHORT;
+                }
+
+                console.log(`IndexType = ${indexType === gl.UNSIGNED_INT ? "UNSIGNED_INT" : "UNSIGNED_SHORT"}`);
+                console.log("IndexArray length:", indexArray.length);
+
+
+                // --- Shaders (same sources) ---
+                const vsSource = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+attribute vec2 aTexCoord;
+varying vec2 vTexCoord;
+varying vec3 vNormal;
+
+uniform mat4 uMVP;
+
+void main() {
+    gl_Position = uMVP * vec4(aPosition,1.0);
+    vTexCoord = aTexCoord;
+    vNormal = aNormal;
+}
+`;
+
+                const fsSource = `
+                precision mediump float;
+                varying vec2 vTexCoord;
+                varying vec3 vNormal;
+                uniform sampler2D uTexture;
+
+                void main() {
+                    vec3 texColor = texture2D(uTexture, vTexCoord).rgb;
+
+                    vec3 normal = normalize(vNormal);
+
+                    // Six directional lights (+X, -X, +Y, -Y, +Z, -Z)
+                    vec3 lightDirs[6];
+                    lightDirs[0] = vec3( 1.0,  0.0,  0.0);
+                    lightDirs[1] = vec3(-1.0,  0.0,  0.0);
+                    lightDirs[2] = vec3( 0.0,  1.0,  0.0);
+                    lightDirs[3] = vec3( 0.0, -1.0,  0.0);
+                    lightDirs[4] = vec3( 0.0,  0.0,  1.0);
+                    lightDirs[5] = vec3( 0.0,  0.0, -1.0);
+
+                    float diff = 0.0;
+                    for (int i = 0; i < 6; i++) {
+                        diff += max(dot(normal, lightDirs[i]), 0.0);
+                    }
+                    diff /= 4.0; // average contribution
+
+                    vec3 ambient = texColor * 0.2; // ambient term
+                    vec3 color = texColor * diff + ambient;
+
+                    gl_FragColor = vec4(color, 1.0);
+                }
+
+                `;
+
+
+                function compileShader(src, type) {
+                    const s = gl.createShader(type);
+                    gl.shaderSource(s, src);
+                    gl.compileShader(s);
+                    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                        const log = gl.getShaderInfoLog(s);
+                        console.error('Shader compile error:', log);
+                    }
+                    return s;
+                }
+
+                // Create program and buffers
+                const vs = compileShader(vsSource, gl.VERTEX_SHADER);
+                const fs = compileShader(fsSource, gl.FRAGMENT_SHADER);
+                const program = gl.createProgram();
+                if (vs) gl.attachShader(program, vs);
+                if (fs) gl.attachShader(program, fs);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    console.error('Program link error:', gl.getProgramInfoLog(program));
+                }
+                gl.useProgram(program);
+
+                const vbo = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+
+                const ibo = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
+
+                // Attribute setup
+                const aPos = gl.getAttribLocation(program, 'aPosition');
+                const aNormal = gl.getAttribLocation(program, 'aNormal');
+                const aTex = gl.getAttribLocation(program, 'aTexCoord');
+                gl.enableVertexAttribArray(aPos);
+                gl.enableVertexAttribArray(aNormal);
+                gl.enableVertexAttribArray(aTex);
+
+                const stride = 8 * 4; // 8 floats: pos+normal+uv
+                gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
+                gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 12);
+                gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, stride, 24);
+
+                if (aPos < 0) console.warn('aPosition attribute not found');
+                if (aNormal < 0) console.warn('aNormal attribute not found');
+                if (aTex < 0) console.warn('aTexCoord attribute not found');
+
+                // UV sanity
+                console.log('UV count:', uvs.length / 2);
+
+
+                const uTexture = gl.getUniformLocation(program, 'uTexture');
+                const uMVP = gl.getUniformLocation(program, 'uMVP');
+
+                // helper matrices (unchanged)
+                function identity() { return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
+                function perspective(fov, aspect, near, far) {
+                    const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
+                    return new Float32Array([
+                        f / aspect, 0, 0, 0,
+                        0, f, 0, 0,
+                        0, 0, (far + near) * nf, -1,
+                        0, 0, (2 * far * near) * nf, 0
+                    ]);
+                }
+                function multiply(a, b) {
+                    const o = new Float32Array(16);
+                    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
+                        o[j * 4 + i] = a[i] * b[j * 4] + a[i + 4] * b[j * 4 + 1] + a[i + 8] * b[j * 4 + 2] + a[i + 12] * b[j * 4 + 3];
+                    return o;
+                }
+                function translate(m, x, y, z) { const t = identity(); t[12] = -x; t[13] = -y; t[14] = -z - distance; return multiply(m, t); }
+                function rotateX(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[5] = c; r[6] = s; r[9] = -s; r[10] = c; return multiply(m, r); }
+                function rotateY(m, a) { const c = Math.cos(a), s = Math.sin(a); const r = identity(); r[0] = c; r[2] = s; r[8] = -s; r[10] = c; return multiply(m, r); }
+
+                let rotX = 0, rotY = 0;
+                let mouseDown = false, lastX = 0, lastY = 0;
+
+                // Single set of pointer handlers (no duplicates)
+                addListener(canvas, 'mousedown', e => { mouseDown = true; lastX = e.clientX; lastY = e.clientY; });
+                addListener(window, 'mouseup', () => { mouseDown = false; });
+                addListener(canvas, 'mousemove', e => {
+                    if (mouseDown) {
+                        rotY -= (e.clientX - lastX) * 0.01;
+                        // Update rotX with clamping (same clamp as earlier)
+                        rotX += (e.clientY - lastY) * 0.01;
+                        const maxRot = Math.PI / 2 - 0.01;
+                        if (rotX > maxRot) rotX = maxRot;
+                        if (rotX < -maxRot) rotX = -maxRot;
+
+                        lastX = e.clientX;
+                        lastY = e.clientY;
+                    }
+                });
+
+                addListener(canvas, 'wheel', e => {
+                    e.preventDefault();
+                    const zoomSpeed = 1.02;
+                    if (e.deltaY < 0) {
+                        distance /= zoomSpeed;
+                    } else {
+                        distance *= zoomSpeed;
+                    }
+                    distance = Math.max(maxSize * 0.5, Math.min(maxSize * 10, distance));
+                }, { passive: false });
+
+                // store GL resources for cleanup
+                cleanupItems.vbo = vbo;
+                cleanupItems.ibo = ibo;
+                cleanupItems.vs = vs;
+                cleanupItems.fs = fs;
+                cleanupItems.program = program;
+
+                // Helper for index byte size (define once)
+                function bytesPerIndex(type) {
+                    return (type === gl.UNSIGNED_INT) ? 4 : 2;
+                }
+
+                // Ensure program is active and sampler set once
+                gl.useProgram(program);
+                if (uTexture !== -1 && uTexture !== null) {
+                    gl.uniform1i(uTexture, 0); // sampler uses texture unit 0
+                } else {
+                    console.warn('uTexture uniform location appears invalid:', uTexture);
+                }
+
+                function renderLoop() {
+                    resizeCanvas();
+                    gl.clearColor(0.1, 0.1, 0.1, 1);
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                    gl.enable(gl.DEPTH_TEST);
+
+                    const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.01, 30000);
+                    let view = translate(identity(), centerX, centerY, centerZ);
+                    view = rotateX(view, rotX);
+                    view = rotateY(view, rotY);
+                    const mvp = multiply(proj, view);
+
+                    // upload MVP once
+                    gl.uniformMatrix4fv(uMVP, false, mvp);
+
+                    // bind element array once
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+
+                    // precompute index byte size for chosen indexType
+                    const indexByteSize = bytesPerIndex(indexType);
+
+                    for (const sub of submeshInfos) {
+                        if (!sub || sub.indexCount <= 0) continue;
+
+                        // bind texture (or fallback) to texture unit 0
+                        const texToBind = sub.texture || gl._fallbackWhiteTexture;
+                        gl.activeTexture(gl.TEXTURE0);
+                        gl.bindTexture(gl.TEXTURE_2D, texToBind);
+                        // sampler already set to unit 0 above; if you prefer to be explicit per-submesh you can uncomment:
+                        // gl.uniform1i(uTexture, 0);
+
+                        // compute byte offset for drawElements (must be in BYTES)
+                        const offsetBytes = sub.indexOffset * indexByteSize;
+
+                        // Optional diagnostic (uncomment to debug)
+                        // console.log('Drawing submesh', { indexCount: sub.indexCount, indexOffset: sub.indexOffset, offsetBytes });
+
+                        // draw
+                        gl.drawElements(gl.TRIANGLES, sub.indexCount, indexType, offsetBytes);
+                    }
+
+                    cleanupItems.rafId = requestAnimationFrame(renderLoop);
+                }
+
+                renderLoop();
+
+                // Provide a cleanup function so future calls can dispose of resources
+                previewContent._xacCleanup = () => {
+                    // Cancel RAF
+                    if (cleanupItems.rafId != null) {
+                        try { cancelAnimationFrame(cleanupItems.rafId); } catch (e) { }
+                        cleanupItems.rafId = null;
+                    }
+                    // Remove listeners
+                    for (const L of cleanupItems.listeners) {
+                        try { L.target.removeEventListener(L.type, L.fn, L.opts); } catch (e) { }
+                    }
+                    cleanupItems.listeners.length = 0;
+
+                    // Delete GL resources (if context still available)
+                    try {
+                        const g = cleanupItems.gl;
+                        if (g) {
+                            gl.bindTexture(gl.TEXTURE_2D, null);
+                            for (const t of cleanupItems.textures) {
+                                try { g.deleteTexture(t); } catch (e) { }
+                            }
+                            cleanupItems.textures = [];
+                            if (cleanupItems.vbo) { g.deleteBuffer(cleanupItems.vbo); cleanupItems.vbo = null; }
+                            if (cleanupItems.ibo) { g.deleteBuffer(cleanupItems.ibo); cleanupItems.ibo = null; }
+                            if (cleanupItems.program) {
+                                try {
+                                    if (cleanupItems.vs) { g.detachShader(cleanupItems.program, cleanupItems.vs); g.deleteShader(cleanupItems.vs); cleanupItems.vs = null; }
+                                    if (cleanupItems.fs) { g.detachShader(cleanupItems.program, cleanupItems.fs); g.deleteShader(cleanupItems.fs); cleanupItems.fs = null; }
+                                } catch (e) { /* some browsers throw when detaching */ }
+                                try { g.deleteProgram(cleanupItems.program); } catch (e) { }
+                                cleanupItems.program = null;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('GL cleanup error', e);
+                    }
+
+                    // Clear canvas and remove DOM nodes if desired (kept minimal)
+                    // previewContent.innerHTML = ''; // if you want to fully remove canvas output
+                };
+
+                // (Optional) Also cleanup when the canvas context is lost
+                function onContextLost(ev) {
+                    ev.preventDefault();
+                    if (previewContent._xacCleanup) previewContent._xacCleanup();
+                }
+                addListener(canvas, 'webglcontextlost', onContextLost);
+            }
 
 
 

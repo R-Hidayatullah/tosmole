@@ -1516,7 +1516,6 @@
                 return fallback;
             };
 
-
             async renderXACModelWorld(scenesData) {
                 const previewContent = document.getElementById('previewContent');
 
@@ -1809,7 +1808,17 @@
                 const maxSize = Math.max(sizeX, sizeY, sizeZ) || 1;
                 let distance = maxSize * 1.5;
 
+                console.log(`  center: (${centerX}, ${centerY}, ${centerZ})`);
                 console.log(`  maxSize=${maxSize}, cameraDistance=${distance}`);
+
+                // Adjust all model positions to be relative to world center
+                // This makes rotation around the center much more intuitive
+                for (const model of cleanupItems.models) {
+                    model.position.x -= centerX;
+                    model.position.y -= centerY;
+                    model.position.z -= centerZ;
+                }
+                console.log("All models recentered to origin for grouped rotation");
 
                 // --- Shaders ---
                 const vsSource = `
@@ -1964,7 +1973,10 @@ void main() {
                     gl.enable(gl.DEPTH_TEST);
 
                     const proj = perspective(Math.PI / 4, canvas.width / canvas.height, 0.01, 30000);
-                    let view = translateView(identity(), centerX, centerY, centerZ);
+
+                    // Camera view: move back by distance, then apply user rotation
+                    let view = identity();
+                    view = translate(view, 0, 0, -distance);
                     view = rotateX(view, rotX);
                     view = rotateY(view, rotY);
 

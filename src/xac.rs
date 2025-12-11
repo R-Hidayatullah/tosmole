@@ -1453,7 +1453,7 @@ mod tests {
         println!("Header: {:?}", root.header);
 
         for (i, entry) in root.chunks.iter().enumerate() {
-            print!(
+            println!(
                 "Chunk {}: id={}, version={}, size={}",
                 i, entry.chunk.chunk_id, entry.chunk.version, entry.chunk.size_in_bytes
             );

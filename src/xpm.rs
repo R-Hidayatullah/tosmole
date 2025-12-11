@@ -6,6 +6,9 @@
 
 use binrw::{BinRead, BinReaderExt, BinResult, binread};
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write};
+use std::path::Path;
 
 /// XPM-specific chunk identifiers
 pub enum XPMChunk {
@@ -15,8 +18,24 @@ pub enum XPMChunk {
     SUBMOTIONS = 102,
 }
 
+/// File chunk header
+#[binread]
+#[derive(Default, Debug, Serialize, Deserialize)]
+#[br(little)]
+pub struct FileChunk {
+    /// The chunk identifier
+    pub chunk_id: u32,
+    /// The size in bytes of this chunk (excluding this chunk struct)
+    pub size_in_bytes: u32,
+    /// The version of the chunk
+    pub version: u32,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
-pub enum XPMChunkData {}
+pub enum XPMChunkData {
+    XPMInfo(XPMInfo),
+    XPMSubMotions(XPMSubMotions),
+}
 
 /// XPM file format header
 #[binread]
@@ -46,7 +65,7 @@ pub struct XPMInfo {
     pub exporter_high_version: u8,
     /// Exporter low version number
     pub exporter_low_version: u8,
-    padding: [u8; 2],
+    padding: u16,
 
     #[br(temp)]
     source_app_length: u32,
@@ -112,7 +131,7 @@ pub struct XPMUnsignedShortKey {
     pub time: f32,
     /// Compressed keyframe value (16-bit unsigned integer)
     pub value: u16,
-    padding: [u8; 2],
+    padding: u16,
 }
 
 /// Container for multiple sub-motions
@@ -127,9 +146,151 @@ pub struct XPMSubMotions {
     pub progressive_sub_motions: Vec<XPMProgressiveSubMotion>,
 }
 
-#[binread]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct XPMChunkEntry {
+    pub chunk: FileChunk,
+    pub chunk_data: XPMChunkData,
+}
+
 #[derive(Default, Debug, Serialize, Deserialize)]
-#[br(little)]
 pub struct XPMRoot {
     pub header: XPMHeader,
+    pub chunks: Vec<XPMChunkEntry>,
+}
+
+impl XPMRoot {
+    /// Read XPMRoot from a file path, accepting &str or &Path
+    pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let path_ref = path.as_ref();
+        let file = File::open(path_ref)?;
+        let mut reader = BufReader::new(file);
+        let root = XPMRoot {
+            header: reader
+                .read_le()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("binrw error: {}", e)))?,
+            chunks: Self::read_chunks(&mut reader)?,
+        };
+
+        Ok(root)
+    }
+
+    /// Read XPMRoot from a byte slice in memory
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        let mut cursor = Cursor::new(bytes);
+        let root = XPMRoot {
+            header: cursor
+                .read_le()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("binrw error: {}", e)))?,
+            chunks: Self::read_chunks(&mut cursor)?,
+        };
+
+        Ok(root)
+    }
+
+    fn read_chunks<R: Read + Seek>(reader: &mut R) -> io::Result<Vec<XPMChunkEntry>> {
+        let mut chunks = Vec::new();
+
+        while let Ok(chunk) = FileChunk::read(reader) {
+            let start_pos = reader.seek(SeekFrom::Current(0))?;
+
+            // Attempt to parse directly from the reader
+            let chunk_data = match Self::parse_chunk_data(&chunk, reader) {
+                Ok(data) => data,
+                Err(e) => {
+                    eprintln!("Failed to parse chunk {}: {:?}", chunk.chunk_id, e);
+
+                    // Fallback: skip chunk based on size_in_bytes
+                    if let Err(seek_err) =
+                        reader.seek(SeekFrom::Start(start_pos + chunk.size_in_bytes as u64))
+                    {
+                        eprintln!("Failed to skip chunk {}: {:?}", chunk.chunk_id, seek_err);
+                    }
+
+                    continue;
+                }
+            };
+
+            // Ensure the reader is at least at the end of the chunk according to size_in_bytes
+            let fallback_end = start_pos + chunk.size_in_bytes as u64;
+            let current_pos = reader.seek(SeekFrom::Current(0))?;
+            if current_pos < fallback_end {
+                reader.seek(SeekFrom::Start(fallback_end))?;
+            }
+
+            chunks.push(XPMChunkEntry { chunk, chunk_data });
+        }
+
+        Ok(chunks)
+    }
+
+    fn parse_chunk_data<R: Read + Seek>(
+        chunk: &FileChunk,
+        reader: &mut R,
+    ) -> Result<XPMChunkData, binrw::Error> {
+        match chunk.chunk_id {
+            x if x == XPMChunk::INFO as u32 => Ok(XPMChunkData::XPMInfo(reader.read_le()?)),
+
+            x if x == XPMChunk::SUBMOTIONS as u32 => {
+                Ok(XPMChunkData::XPMSubMotions(reader.read_le()?))
+            }
+
+            _ => Self::unsupported(chunk, reader),
+        }
+    }
+
+    /// helper for unsupported chunk/version
+    fn unsupported<R: Read + Seek>(
+        chunk: &FileChunk,
+        reader: &mut R,
+    ) -> Result<XPMChunkData, binrw::Error> {
+        let pos = reader.seek(SeekFrom::Current(0)).unwrap_or(0); // current position, fallback to 0 if error
+
+        Err(binrw::Error::AssertFail {
+            pos,
+            message: format!(
+                "Unknown or unsupported chunk_id {} with version {}",
+                chunk.chunk_id, chunk.version
+            ),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    #[test]
+    fn test_read_xpm_root() -> io::Result<()> {
+        // Path to your test IES file
+        let path = "tests/npc_diana_head_std.xpm";
+
+        // Read XPMRoot from file
+        let root = XPMRoot::from_file(path)?;
+
+        // Print for debugging (optional)
+        println!("{:#?}", root.header);
+        for (i, entry) in root.chunks.iter().enumerate() {
+            println!(
+                "Chunk {}: id={}, version={}, size={}",
+                i, entry.chunk.chunk_id, entry.chunk.version, entry.chunk.size_in_bytes
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_xpm_from_memory_stats() -> io::Result<()> {
+        let data = std::fs::read("tests/GM1_hair_skl_summon_demon2.xpm")?;
+        let root = XPMRoot::from_bytes(&data)?;
+
+        println!("{:#?}", root.header);
+        for (i, entry) in root.chunks.iter().enumerate() {
+            println!(
+                "Chunk {}: id={}, version={}, size={}",
+                i, entry.chunk.chunk_id, entry.chunk.version, entry.chunk.size_in_bytes
+            );
+        }
+        Ok(())
+    }
 }

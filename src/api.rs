@@ -17,6 +17,8 @@ use crate::mesh::*;
 use crate::threedworld::World;
 use crate::xac::XACRoot;
 use crate::xml;
+use crate::xpm::XPMRoot;
+use crate::xsm::XSMRoot;
 
 /// -------------------------
 /// Startup Info Endpoint
@@ -375,6 +377,22 @@ pub async fn preview_file(
         return match IESRoot::from_bytes(&data) {
             Ok(ies) => HttpResponse::Ok().json(ies),
             Err(_) => HttpResponse::InternalServerError().body("Failed to parse IES file"),
+        };
+    }
+
+    // XPM format
+    if ext == "xpm" {
+        return match XPMRoot::from_bytes(&data) {
+            Ok(xpm) => HttpResponse::Ok().json(xpm),
+            Err(_) => HttpResponse::InternalServerError().body("Failed to parse XPM file"),
+        };
+    }
+
+    // XSM format
+    if ext == "xsm" {
+        return match XSMRoot::from_bytes(&data) {
+            Ok(xsm) => HttpResponse::Ok().json(xsm),
+            Err(_) => HttpResponse::InternalServerError().body("Failed to parse XSM file"),
         };
     }
 

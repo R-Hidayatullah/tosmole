@@ -1861,7 +1861,7 @@ void main() {
     for (int i = 0; i < 6; i++) {
         diff += max(dot(normal, lightDirs[i]), 0.0);
     }
-    diff /= 4.0;
+    diff /= 2.0;
 
     vec3 ambient = texColor.rgb * 0.2;
     vec3 color = texColor.rgb * diff + ambient;
@@ -2418,7 +2418,7 @@ void main() {
     for (int i = 0; i < 6; i++) {
         diff += max(dot(normal, lightDirs[i]), 0.0);
     }
-    diff /= 4.0; // average contribution
+    diff /= 2.0; // average contribution
 
     vec3 ambient = texColor.rgb * 0.2; // ambient term
     vec3 color = texColor.rgb * diff + ambient;

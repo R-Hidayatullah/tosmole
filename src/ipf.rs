@@ -226,34 +226,52 @@ pub fn parse_all_ipf_files_limited_threads(
         .collect();
 
     let (tx_paths, rx_paths) = mpsc::channel::<PathBuf>();
-    let rx_paths = Arc::new(Mutex::new(rx_paths));
-    let (tx_results, rx_results) = mpsc::channel::<io::Result<IPFRoot>>();
+    let (tx_results, rx_results) = mpsc::channel::<IPFRoot>();
 
+    // send jobs
     for path in ipf_paths {
         tx_paths.send(path).unwrap();
     }
-    drop(tx_paths); // signal no more tasks
+    drop(tx_paths);
 
+    let rx_paths = Arc::new(Mutex::new(rx_paths));
     let mut handles = Vec::new();
+
     for _ in 0..max_threads {
         let rx_paths = Arc::clone(&rx_paths);
         let tx_results = tx_results.clone();
 
         let handle = thread::spawn(move || {
-            while let Ok(path) = rx_paths.lock().unwrap().recv() {
-                let res = IPFRoot::from_file(&path).map(|root| root);
-                let _ = tx_results.send(res);
+            loop {
+                let path = {
+                    let lock = rx_paths.lock().unwrap();
+                    match lock.recv() {
+                        Ok(p) => p,
+                        Err(_) => break,
+                    }
+                };
+
+                match IPFRoot::from_file(&path) {
+                    Ok(ipf) => {
+                        let _ = tx_results.send(ipf);
+                    }
+                    Err(e) => {
+                        // 🔥 print immediately, skip file
+                        eprintln!("❌ Failed {:?}: {}", path, e);
+                    }
+                }
             }
         });
+
         handles.push(handle);
     }
 
-    drop(tx_results); // optional: close sender so iterator will end
+    drop(tx_results);
 
-    // Collect all results
+    // collect only successful results
     let mut results = Vec::new();
-    for res in rx_results.iter() {
-        results.push(res?);
+    for ipf in rx_results.iter() {
+        results.push(ipf);
     }
 
     for handle in handles {
@@ -274,6 +292,7 @@ pub fn parse_game_folders_multithread_limited(
         let data_dir = data_dir.clone();
         thread::spawn(move || parse_all_ipf_files_limited_threads(&data_dir, max_threads))
     };
+
     let handle_patch = {
         let patch_dir = patch_dir.clone();
         thread::spawn(move || parse_all_ipf_files_limited_threads(&patch_dir, max_threads))
@@ -458,7 +477,7 @@ mod tests {
     #[test]
     fn test_ipf_file_index_37_is_valid_utf8() -> io::Result<()> {
         // Read IPFRoot from file
-        let root = IPFRoot::from_file("tests/379124_001001.ipf")?;
+        let root = IPFRoot::from_file("400769_001001.ipf")?;
 
         // Ensure file table is not empty
         assert!(
